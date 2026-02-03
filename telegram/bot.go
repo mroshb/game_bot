@@ -244,8 +244,7 @@ func (b *Bot) handleMessage(message *tgbotapi.Message) {
 		b.handlers.UserRepo.UpdateLastActivity(user.ID)
 
 		b.clearSession(userID)
-		isAdmin := user.TelegramID == b.config.SuperAdminTgID
-		b.sendMessage(userID, MsgCancel, MainMenuKeyboard(isAdmin))
+		b.sendMessage(userID, MsgCancel, MainMenuKeyboard(false))
 		return
 	}
 
@@ -381,8 +380,9 @@ func (b *Bot) handleMessage(message *tgbotapi.Message) {
 
 			// Intercept Main Menu buttons during chat
 			switch normalizeButton(message.Text) {
-			case normalizeButton(BtnPlay), normalizeButton(BtnProfileHub), normalizeButton(BtnLeaderboard), normalizeButton(BtnSocialHub),
-				normalizeButton(BtnSettingsHelp), normalizeButton(BtnAdminPanel), normalizeButton(BtnQuickMatch), normalizeButton(BtnPlayWithFriends):
+			case normalizeButton(BtnPlayGame), normalizeButton(BtnProfile), normalizeButton(BtnLeaderboard), normalizeButton(BtnFriends),
+				normalizeButton(BtnHelp), normalizeButton(BtnQuickMatch), normalizeButton(BtnPlayWithFriends),
+				normalizeButton(BtnChatNow), normalizeButton(BtnReferral), normalizeButton(BtnCoins), normalizeButton(BtnVillageHub):
 				b.sendMessage(userID, "⚠️ شما در چت فعال هستید. لطفاً اول چت را تمام کنید.", handlers.ChatKeyboard())
 				return
 			}
@@ -444,8 +444,7 @@ func (b *Bot) handleMessage(message *tgbotapi.Message) {
 		b.sendMessage(userID, "👋 سلام! برای شروع ثبت نام لطفاً دستور /start را بزنید.", nil)
 	} else {
 		// If registered but unknown input -> Main Menu
-		isAdmin := user != nil && user.TelegramID == b.config.SuperAdminTgID
-		b.sendMessage(userID, MsgMainMenu, MainMenuKeyboard(isAdmin))
+		b.sendMessage(userID, MsgMainMenu, MainMenuKeyboard(false))
 	}
 }
 
@@ -488,8 +487,7 @@ func (b *Bot) handleCommand(message *tgbotapi.Message, isRegistered bool) {
 				return
 			}
 
-			isAdmin := user != nil && user.TelegramID == b.config.SuperAdminTgID
-			b.sendMessage(userID, MsgWelcomeBack, MainMenuKeyboard(isAdmin))
+			b.sendMessage(userID, MsgWelcomeBack, MainMenuKeyboard(false))
 		} else {
 			// Step 1: Start and Gender (Inline)
 			session := b.getSession(userID)
@@ -558,9 +556,13 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 	}
 
 	switch btn {
-	case normalizeButton(BtnPlay):
+	case normalizeButton(BtnPlayGame):
 		clearState()
 		b.sendMessage(userID, "چه مدلی میخوای بازی کنی؟ انتخاب کن و وارد میدون شو!", PlayModeKeyboard())
+
+	case normalizeButton(BtnChatNow):
+		clearState()
+		b.sendMessage(userID, MsgSelectSearchMode, SearchModeKeyboard())
 
 	case normalizeButton(BtnQuickMatch):
 		clearState()
@@ -600,7 +602,7 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 
 	case normalizeButton(BtnRandomMatch):
 		clearState()
-		b.handlers.QuickJoinRoom(userID, b)
+		b.handlers.StartMatchmaking(userID, models.RequestedGenderAny, b.getSession(userID), b)
 
 	case normalizeButton(BtnOneVsOneRandom):
 		user, _ := b.handlers.UserRepo.GetUserByTelegramID(userID)
@@ -637,7 +639,7 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 	case normalizeButton(BtnBetting):
 		b.sendMessage(userID, "💰 مبلغ شرط‌بندی رو انتخاب کن (به زودی...)", nil)
 
-	case normalizeButton(BtnProfileHub):
+	case normalizeButton(BtnProfile):
 		clearState()
 		b.handlers.ShowProfile(userID, user, b)
 
@@ -650,11 +652,24 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 	case normalizeButton(BtnEditProfile):
 		b.handlers.HandleEditProfile(userID, b)
 
+	case normalizeButton(BtnLikes):
+		b.sendMessage(userID, "❤️ لایک‌های شما (به زودی...)", nil)
+
+	case normalizeButton(BtnEditLocation):
+		b.handlers.HandleFilterProvince(userID, b) // Reuse province selection or dedicated edit loc
+
+	case normalizeButton(BtnBlocks):
+		b.sendMessage(userID, "🚫 لیست بلاک شده‌های شما (به زودی...)", nil)
+
+	case normalizeButton(BtnSettings):
+		clearState()
+		b.sendMessage(userID, "⚙️ تنظیمات پروفایل و کاربری:", SettingsHelpKeyboard())
+
 	case normalizeButton(BtnLeaderboard):
 		clearState()
 		b.handlers.ShowLeaderboard(userID, b) // Will implement in user_handler
 
-	case normalizeButton(BtnSocialHub):
+	case normalizeButton(BtnFriends):
 		clearState()
 		b.sendMessage(userID, "دوستات رو بیار، با هم بازی کنید و سکه بگیرید!", SocialHubKeyboard())
 
@@ -709,9 +724,44 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 	case normalizeButton(BtnFilterNoChat):
 		b.handlers.HandleFilterNoChat(userID, b)
 
-	case normalizeButton(BtnSettingsHelp):
+	case normalizeButton(BtnFilterRecent):
+		b.handlers.HandleFilterRecent(userID, b)
+
+	case normalizeButton(BtnFilterAdvanced):
+		clearState()
+		b.startSearchFlow(userID)
+
+	case normalizeButton(BtnFemale):
+		b.handlers.StartMatchmaking(userID, models.GenderFemale, b.getSession(userID), b)
+
+	case normalizeButton(BtnMale):
+		b.handlers.StartMatchmaking(userID, models.GenderMale, b.getSession(userID), b)
+
+	case normalizeButton(BtnFilterNearMe):
+		b.sendMessage(userID, "📍 برای مشاهده کاربران نزدیک، لطفاً لوکیشن خود را از منوی پیوست (آیکون گیره 📎) ارسال کنید.", nil)
+
+	case normalizeButton(BtnHelp):
 		clearState()
 		b.sendMessage(userID, "⚙️ تنظیمات و راهنمای بازی:", SettingsHelpKeyboard())
+
+	case normalizeButton(BtnReferral):
+		botUser, _ := b.api.GetMe()
+		inviteLink := fmt.Sprintf("https://t.me/%s?start=ref_%d", botUser.UserName, userID)
+		keyboard := tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonURL("📣 اشتراک‌گذاری با دوستان", fmt.Sprintf("https://t.me/share/url?url=%s&text=%s", inviteLink, "کلی بازی و چت باحال! بیا دهکده ما 🎮")),
+			),
+		)
+		b.sendMessage(userID, "📣 معرفی به دوستان:\n\nبا دعوت از دوستان خود، ۲۰٪ از اولین خرید آن‌ها را به عنوان جایزه دریافت کنید!\n\n🔗 لینک دعوت اختصاصی شما:\n"+inviteLink, keyboard)
+
+	case normalizeButton(BtnCoins):
+		clearState()
+		keyboard := tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData(BtnIHavePaid, "btn:"+BtnIHavePaid),
+			),
+		)
+		b.sendMessage(userID, MsgCoinPurchasePlans, keyboard)
 
 	case normalizeButton(BtnNotifications):
 		b.sendMessage(userID, "🔔 اعلان‌ها فعال/غیرفعال شد (به زودی...)", nil)
@@ -727,16 +777,7 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 
 	case normalizeButton(BtnBack):
 		clearState()
-		isAdmin := user != nil && user.TelegramID == b.config.SuperAdminTgID
-		b.SendMainMenu(userID, isAdmin)
-
-	case normalizeButton(BtnAdminPanel):
-		clearState()
-		if user != nil && user.TelegramID == b.config.SuperAdminTgID {
-			b.sendMessage(userID, MsgAdminPanel, AdminPanelKeyboard())
-		} else {
-			b.sendMessage(userID, MsgAdminOnly, MainMenuKeyboard(false))
-		}
+		b.SendMainMenu(userID, false)
 
 	case normalizeButton(BtnEndChat):
 		clearState()
@@ -748,8 +789,7 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 			b.handlers.UserRepo.UpdateUserStatus(user.ID, models.UserStatusOnline)
 		}
 		b.clearSession(userID)
-		isAdmin := user != nil && user.TelegramID == b.config.SuperAdminTgID
-		b.sendMessage(userID, MsgCancel, MainMenuKeyboard(isAdmin))
+		b.sendMessage(userID, MsgCancel, MainMenuKeyboard(false))
 
 	default:
 		return false
@@ -1328,12 +1368,12 @@ func (b *Bot) EditMessage(chatID int64, messageID int, text string, keyboard int
 	}
 }
 
-func (b *Bot) SendMainMenu(chatID int64, isAdmin bool) {
-	b.sendMessage(chatID, MsgMainMenu, MainMenuKeyboard(isAdmin))
+func (b *Bot) SendMainMenu(chatID int64, _ bool) {
+	b.sendMessage(chatID, MsgMainMenu, MainMenuKeyboard(false))
 }
 
-func (b *Bot) GetMainMenuKeyboard(isAdmin bool) interface{} {
-	return MainMenuKeyboard(isAdmin)
+func (b *Bot) GetMainMenuKeyboard(_ bool) interface{} {
+	return MainMenuKeyboard(false)
 }
 
 func (b *Bot) GetGenderKeyboard() interface{} {

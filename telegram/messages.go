@@ -65,13 +65,6 @@ const (
 	MsgErrorNotRegistered = "⚠️ اول باید ثبت نام کنی!"
 	MsgErrorUnauthorized  = "🚫 شما دسترسی به این بخش رو نداری!"
 
-	// Admin
-	MsgAdminPanel      = "🔧 پنل مدیریت:\n\nانتخاب کن:"
-	MsgAdminOnly       = "🔧 این بخش فقط برای مدیر است!"
-	MsgUserNotFound    = "❌ کاربر پیدا نشد!"
-	MsgQuestionAdded   = "✅ سوال اضافه شد!"
-	MsgQuestionDeleted = "✅ سوال حذف شد!"
-
 	// General
 	MsgCancel     = "❌ لغو شد."
 	MsgConfirm    = "✅ تأیید می‌کنی؟"
@@ -108,12 +101,15 @@ const (
 
 // Button labels
 const (
-	BtnPlay         = "🎮 بازی کن! (شروع سریع)"
-	BtnProfileHub   = "👤 پروفایل و دستاوردها"
-	BtnLeaderboard  = "🏆 جدول برترینها"
-	BtnSocialHub    = "👥 باشگاه دوستان"
-	BtnVillageHub   = "🏘 دهکده من"
-	BtnSettingsHelp = "⚙️ تنظیمات / راهنما"
+	BtnVillageHub  = "🏘 دهکده من"
+	BtnPlayGame    = "🎮 بازی کن!"
+	BtnChatNow     = "💬 چت کن !"
+	BtnLeaderboard = "🏆 برترین ها"
+	BtnFriends     = "👥 دوستان من"
+	BtnProfile     = "👤 پروفایل من"
+	BtnHelp        = "❓ راهنما"
+	BtnReferral    = "📣 دعوت از دوستان"
+	BtnCoins       = "💰 سکه"
 
 	BtnQuickMatch      = "🎲 بازی شانسی (Quick Match)"
 	BtnQuiz            = "🧠 کوییز (اطلاعات عمومی)"
@@ -122,9 +118,14 @@ const (
 	BtnPlayWithFriends = "⚔️ بازی با دوستان"
 	BtnBetting         = "💰 شرط‌بندی (انتخاب مبلغ)"
 
-	BtnCoinShop    = "🛍 فروشگاه سکه"
-	BtnDailyBonus  = "🎁 جایزه روزانه (Daily Bonus)"
-	BtnEditProfile = "✏️ ویرایش پروفایل"
+	BtnCoinShop     = "🛍 فروشگاه سکه"
+	BtnDailyBonus   = "🎁 جایزه روزانه (Daily Bonus)"
+	BtnEditProfile  = "✏️ ویرایش پروفایل"
+	BtnLikes        = "❤️ لایک‌ها"
+	BtnEditLocation = "📍 ویرایش لوکیشن"
+	BtnBlocks       = "🚫 بلاک شده‌ها"
+	BtnSettings     = "⚙️ تنظیمات"
+	BtnGameHistory  = "📜 تاریخچه بازی‌ها"
 
 	BtnTodayTop   = "📅 برترینهای امروز"
 	BtnWeekTop    = "🗓 برترینهای هفته"
@@ -151,10 +152,6 @@ const (
 	BtnAccept         = "✅ قبول"
 	BtnReject         = "❌ رد"
 	BtnBack           = "🔙 بازگشت"
-	BtnAdminPanel     = "🔧 پنل مدیریت"
-	BtnAddQuestion    = "➕ افزودن سوال"
-	BtnViewQuestions  = "📋 مشاهده سوالات"
-	BtnUserManagement = "👥 مدیریت کاربران"
 	BtnCreateRoom     = "🏛 ساخت روم"
 	BtnSearchRoom     = "🔍 جستجوی روم"
 	BtnRandomMatch    = "🎲 جستجوی تصادفی"
@@ -165,6 +162,7 @@ const (
 	BtnFilterNew      = "👶 کاربران جدید"
 	BtnFilterNoChat   = "😶 بدون چت ها"
 	BtnFilterAdvanced = "⚙️ جستجوی پیشرفته"
+	BtnFilterNearMe   = "📍 نزدیک من"
 	BtnBuyCoins       = "💎 خرید سکه"
 	BtnIHavePaid      = "✅ واریز کردم"
 

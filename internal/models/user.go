@@ -11,33 +11,33 @@ type User struct {
 	ID               uint      `gorm:"primaryKey"`
 	TelegramID       int64     `gorm:"uniqueIndex;not null"`
 	FullName         string    `gorm:"type:varchar(255);not null"`
-	Gender           string    `gorm:"type:varchar(10);not null"`
-	Age              int       `gorm:"not null"`
-	City             string    `gorm:"type:varchar(100);not null"`
-	Province         string    `gorm:"type:varchar(100)"` // New field
-	Biography        string    `gorm:"type:text"`         // New field
-	Likes            int64     `gorm:"default:0"`         // New field
-	ProfilePhoto     string    `gorm:"type:varchar(500)"` // اختیاری
-	CoinBalance      int64     `gorm:"default:100;not null"`
+	Gender           string    `gorm:"type:varchar(10);not null;index"`
+	Age              int       `gorm:"not null;index"`
+	City             string    `gorm:"type:varchar(100);not null;index"`
+	Province         string    `gorm:"type:varchar(100);index:idx_user_province_activity"` // Composite index part 1
+	Biography        string    `gorm:"type:text"`
+	Likes            int64     `gorm:"default:0;index"`
+	ProfilePhoto     string    `gorm:"type:varchar(500)"`
+	CoinBalance      int64     `gorm:"default:100;not null;index"`
 	Diamonds         int64     `gorm:"default:0;not null"`
-	Level            int       `gorm:"default:1;not null"`
-	XP               int64     `gorm:"default:0;not null"`
+	Level            int       `gorm:"default:1;not null;index"`
+	XP               int64     `gorm:"default:0;not null;index"`
 	Wins             int       `gorm:"default:0;not null"`
 	Losses           int       `gorm:"default:0;not null"`
 	Draws            int       `gorm:"default:0;not null"`
-	ItemsInventory   string    `gorm:"type:text;default:'{}'"`      // JSON: {"shield": 2, "swap": 5}
-	CustomAvatarID   string    `gorm:"type:varchar(500)"`           // For uploaded photos
-	PublicID         string    `gorm:"uniqueIndex;type:varchar(8)"` // New field
-	ReferrerID       uint      `gorm:"default:0"`                   // New field for referral system
-	Latitude         float64   `gorm:"type:float"`
-	Longitude        float64   `gorm:"type:float"`
-	Status           string    `gorm:"type:varchar(20);default:'offline'"`
+	ItemsInventory   string    `gorm:"type:text;default:'{}'"`
+	CustomAvatarID   string    `gorm:"type:varchar(500)"`
+	PublicID         string    `gorm:"uniqueIndex;type:varchar(8)"`
+	ReferrerID       uint      `gorm:"default:0;index"`
+	Latitude         float64   `gorm:"type:float;index"`
+	Longitude        float64   `gorm:"type:float;index"`
+	Status           string    `gorm:"type:varchar(20);default:'offline';index:idx_user_status_activity"`
 	LastDailyBonus   time.Time `gorm:"default:NULL"`
 	DailyBonusStreak int       `gorm:"default:0;not null"`
-	LastActivity     time.Time `gorm:"default:CURRENT_TIMESTAMP"`
-	CreatedAt        time.Time `gorm:"autoCreateTime"`
+	LastActivity     time.Time `gorm:"default:CURRENT_TIMESTAMP;index;index:idx_user_province_activity;index:idx_user_status_activity"`
+	CreatedAt        time.Time `gorm:"autoCreateTime;index"`
 	UpdatedAt        time.Time `gorm:"autoUpdateTime"`
-	Distance         float64   `gorm:"-"` // For nearby search result
+	Distance         float64   `gorm:"-"`
 }
 
 // GetLevelTitle returns the title based on user level

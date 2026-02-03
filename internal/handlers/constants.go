@@ -4,12 +4,15 @@ package handlers
 // Ideally these should be in a shared package, but for now we mirror them here
 // to avoid circular dependency with telegram package
 const (
-	BtnPlay         = "🎮 بازی کن! (شروع سریع)"
-	BtnProfileHub   = "👤 پروفایل و دستاوردها"
-	BtnLeaderboard  = "🏆 جدول برترینها"
-	BtnSocialHub    = "👥 باشگاه دوستان"
-	BtnVillageHub   = "🏘 دهکده من"
-	BtnSettingsHelp = "⚙️ تنظیمات / راهنما"
+	BtnVillageHub  = "🏘 دهکده من"
+	BtnPlayGame    = "🎮 بازی کن!"
+	BtnChatNow     = "💬 چت کن !"
+	BtnLeaderboard = "🏆 برترین ها"
+	BtnFriends     = "👥 دوستان من"
+	BtnProfile     = "👤 پروفایل من"
+	BtnHelp        = "❓ راهنما"
+	BtnReferral    = "📣 دعوت از دوستان"
+	BtnCoins       = "💰 سکه"
 
 	BtnQuickMatch      = "🎲 بازی شانسی (Quick Match)"
 	BtnQuiz            = "🧠 کوییز (اطلاعات عمومی)"
@@ -18,9 +21,14 @@ const (
 	BtnPlayWithFriends = "⚔️ بازی با دوستان"
 	BtnBetting         = "💰 شرط‌بندی (انتخاب مبلغ)"
 
-	BtnCoinShop    = "🛍 فروشگاه سکه"
-	BtnDailyBonus  = "🎁 جایزه روزانه (Daily Bonus)"
-	BtnEditProfile = "✏️ ویرایش پروفایل"
+	BtnCoinShop     = "🛍 فروشگاه سکه"
+	BtnDailyBonus   = "🎁 جایزه روزانه (Daily Bonus)"
+	BtnEditProfile  = "✏️ ویرایش پروفایل"
+	BtnLikes        = "❤️ لایک‌ها"
+	BtnEditLocation = "📍 ویرایش لوکیشن"
+	BtnBlocks       = "🚫 بلاک شده‌ها"
+	BtnSettings     = "⚙️ تنظیمات"
+	BtnGameHistory  = "📜 تاریخچه بازی‌ها"
 
 	BtnTodayTop   = "📅 برترینهای امروز"
 	BtnWeekTop    = "🗓 برترینهای هفته"

@@ -27,6 +27,9 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 		NowFunc: func() time.Time {
 			return time.Now().UTC()
 		},
+		// High performance settings
+		SkipDefaultTransaction: true, // Skip wrapping every operation in a transaction
+		PrepareStmt:            true, // Cache prepared statements
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
@@ -37,12 +40,15 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to get database instance: %w", err)
 	}
 
-	// Connection pool settings
-	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetMaxOpenConns(100)
-	sqlDB.SetConnMaxLifetime(time.Hour)
+	// Optimized Connection Pool Settings for 1000+ Concurrent Requests
+	// These settings allow the pool to scale up to handle high load while maintaining
+	// a healthy number of warm idle connections.
+	sqlDB.SetMaxIdleConns(50)                  // Keep 50 idle connections warm
+	sqlDB.SetMaxOpenConns(500)                 // Scale up to 500 connections under load
+	sqlDB.SetConnMaxLifetime(time.Hour)         // Cycle connections hourly to prevent stale leaks
+	sqlDB.SetConnMaxIdleTime(10 * time.Minute) // Close idle connections after 10m to free DB resources
 
-	logger.Info("Database connected successfully")
+	logger.Info("Database connected successfully with high-performance pool settings")
 	return db, nil
 }
 

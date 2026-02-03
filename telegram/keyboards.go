@@ -7,35 +7,37 @@ import (
 )
 
 // MainMenuKeyboard creates the main menu keyboard
-func MainMenuKeyboard(isAdmin bool) tgbotapi.ReplyKeyboardMarkup {
+func MainMenuKeyboard(_ bool) tgbotapi.ReplyKeyboardMarkup {
 	var rows [][]tgbotapi.KeyboardButton
 
-	// First row - BIG button for Play
+	// Row 1 - My Village
 	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
-		tgbotapi.NewKeyboardButton(BtnPlay),
-	))
-
-	// Middle rows - 2 buttons each
-	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
-		tgbotapi.NewKeyboardButton(BtnProfileHub),
-		tgbotapi.NewKeyboardButton(BtnLeaderboard),
-	))
-
-	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
-		tgbotapi.NewKeyboardButton(BtnSocialHub),
 		tgbotapi.NewKeyboardButton(BtnVillageHub),
 	))
 
+	// Row 2 - Play! - Chat Now!
 	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
-		tgbotapi.NewKeyboardButton(BtnSettingsHelp),
+		tgbotapi.NewKeyboardButton(BtnPlayGame),
+		tgbotapi.NewKeyboardButton(BtnChatNow),
 	))
 
-	// Admin row
-	if isAdmin {
-		rows = append(rows, tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton(BtnAdminPanel),
-		))
-	}
+	// Row 3 - Coins - Leaderboard - Help
+	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
+		tgbotapi.NewKeyboardButton(BtnCoins),
+		tgbotapi.NewKeyboardButton(BtnLeaderboard),
+		tgbotapi.NewKeyboardButton(BtnHelp),
+	))
+
+	// Row 4 - Profile - Friends
+	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
+		tgbotapi.NewKeyboardButton(BtnProfile),
+		tgbotapi.NewKeyboardButton(BtnFriends),
+	))
+
+	// Row 5 - Referral
+	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
+		tgbotapi.NewKeyboardButton(BtnReferral),
+	))
 
 	return tgbotapi.NewReplyKeyboard(rows...)
 }
@@ -233,22 +235,6 @@ func SkipKeyboard() tgbotapi.InlineKeyboardMarkup {
 	)
 }
 
-// AdminPanelKeyboard creates admin panel inline keyboard
-func AdminPanelKeyboard() tgbotapi.InlineKeyboardMarkup {
-	return tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(BtnAddQuestion, "btn:"+BtnAddQuestion),
-			tgbotapi.NewInlineKeyboardButtonData(BtnViewQuestions, "btn:"+BtnViewQuestions),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(BtnUserManagement, "btn:"+BtnUserManagement),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(BtnBack, "btn:"+BtnBack),
-		),
-	)
-}
-
 // RemoveKeyboard removes the keyboard
 func RemoveKeyboard() tgbotapi.ReplyKeyboardRemove {
 	return tgbotapi.NewRemoveKeyboard(true)
@@ -371,12 +357,29 @@ func SettingsHelpKeyboard() tgbotapi.InlineKeyboardMarkup {
 // SearchModeKeyboard creates inline keyboard for selecting search mode
 func SearchModeKeyboard() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
+		// Row 1 - Random Search
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(BtnRandomMatch, "btn:"+BtnRandomMatch),
-			tgbotapi.NewInlineKeyboardButtonData(BtnUserList, "btn:"+BtnUserList),
 		),
+		// Row 2 - Girl - Boy
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(BtnCancel, "btn:"+BtnCancel),
+			tgbotapi.NewInlineKeyboardButtonData(BtnFemale, "btn:"+BtnFemale),
+			tgbotapi.NewInlineKeyboardButtonData(BtnMale, "btn:"+BtnMale),
+		),
+		// Row 3 - Age - Province - Near Me
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(BtnFilterAge, "btn:"+BtnFilterAge),
+			tgbotapi.NewInlineKeyboardButtonData(BtnFilterProvince, "btn:"+BtnFilterProvince),
+			tgbotapi.NewInlineKeyboardButtonData(BtnFilterNearMe, "btn:"+BtnFilterNearMe),
+		),
+		// Row 4 - New Users - No Chat
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(BtnFilterNew, "btn:"+BtnFilterNew),
+			tgbotapi.NewInlineKeyboardButtonData(BtnFilterNoChat, "btn:"+BtnFilterNoChat),
+		),
+		// Row 5 - Advanced Search
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(BtnFilterAdvanced, "btn:"+BtnFilterAdvanced),
 		),
 	)
 }

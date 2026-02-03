@@ -369,26 +369,19 @@ func (h *HandlerManager) ShowProfile(userID int64, user *models.User, bot BotInt
 
 	var keyboard tgbotapi.InlineKeyboardMarkup
 	if isSelf {
-		now := time.Now()
-		bonusClaimed := !user.LastDailyBonus.IsZero() && user.LastDailyBonus.Year() == now.Year() && user.LastDailyBonus.YearDay() == now.YearDay()
-		bonusLabel := "🎁 جایزه روزانه"
-		if bonusClaimed {
-			bonusLabel = "✅ جایزه امروز دریافت شد"
-		}
 
 		keyboard = tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("🛍 فروشگاه سکه", "shop"),
-				tgbotapi.NewInlineKeyboardButtonData(bonusLabel, "daily_bonus"),
+				tgbotapi.NewInlineKeyboardButtonData(BtnEditProfile, "edit_profile"),
+				tgbotapi.NewInlineKeyboardButtonData(BtnLikes, "btn:"+BtnLikes),
 			),
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("✏️ ویرایش پروفایل", "edit_profile"),
+				tgbotapi.NewInlineKeyboardButtonData(BtnEditLocation, "btn:"+BtnEditLocation),
+				tgbotapi.NewInlineKeyboardButtonData(BtnBlocks, "btn:"+BtnBlocks),
 			),
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("🎒 کوله‌پشتی", "inventory"),
-			),
-			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("📜 تاریخچه بازی‌ها", "game_history"),
+				tgbotapi.NewInlineKeyboardButtonData(BtnSettings, "btn:"+BtnSettings),
+				tgbotapi.NewInlineKeyboardButtonData(BtnGameHistory, "game_history"),
 			),
 		)
 	} else {
