@@ -12,6 +12,7 @@ import (
 	"github.com/mroshb/game_bot/internal/security"
 	apperrors "github.com/mroshb/game_bot/pkg/errors"
 	"github.com/mroshb/game_bot/pkg/logger"
+	"github.com/mroshb/game_bot/pkg/utils"
 )
 
 // Bot interface to avoid circular dependency
@@ -34,6 +35,7 @@ type BotInterface interface {
 	AnswerCallbackQuery(queryID string, text string, showAlert bool)
 	GetVillageHubKeyboard(hasVillage bool) interface{}
 	GetCancelKeyboard() interface{}
+	EditMessageReplyMarkup(chatID int64, messageID int, keyboard interface{})
 }
 
 type UserSession struct {
@@ -596,7 +598,8 @@ func (h *HandlerManager) HandleEditProfileInput(message *tgbotapi.Message, sessi
 		user.FullName = name
 
 	case StateEditAge:
-		age, err := strconv.Atoi(text)
+		normalizedText := utils.NormalizePersianNumbers(text)
+		age, err := strconv.Atoi(normalizedText)
 		if err != nil || !security.ValidateAge(age) {
 			bot.SendMessage(userID, "❌ سن نامعتبر است!", nil)
 			return

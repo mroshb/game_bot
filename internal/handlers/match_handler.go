@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/mroshb/game_bot/internal/models"
 	"github.com/mroshb/game_bot/pkg/logger"
+	"github.com/mroshb/game_bot/pkg/utils"
 )
 
 func (h *HandlerManager) StartMatchmaking(userID int64, requestedGender string, session *UserSession, bot BotInterface) {
@@ -76,6 +78,9 @@ func (h *HandlerManager) StartMatchmaking(userID int64, requestedGender string, 
 	if city, ok := session.Data["search_city"].(string); ok && city != "" {
 		queue.City = city
 	}
+	if provinces, ok := session.Data["search_provinces"].([]string); ok && len(provinces) > 0 {
+		queue.TargetProvinces = strings.Join(provinces, ",")
+	}
 
 	if err := h.MatchRepo.AddToQueue(queue); err != nil {
 		logger.Error("Failed to add to queue", "error", err)
@@ -138,9 +143,9 @@ func (h *HandlerManager) HandleSearchGenderSelection(message *tgbotapi.Message, 
 	}
 
 	session.Data["search_gender"] = requestedGender
-	session.State = StateSearchAge
+	session.State = "advanced_search_age"
 
-	bot.SendMessage(userID, "🎂 محدوده سنی مورد نظرت رو وارد کن (مثال: 20-30) یا بزن رد شو:", SkipKeyboard())
+	bot.SendMessage(userID, "🎂 سن شروع محدوده را انتخاب کنید:", AdvancedSearchAgeKeyboard("min"))
 }
 
 func (h *HandlerManager) HandleSearchAgeSelection(message *tgbotapi.Message, session *UserSession, bot BotInterface) {
@@ -160,11 +165,11 @@ func (h *HandlerManager) HandleSearchAgeSelection(message *tgbotapi.Message, ses
 
 	if normalizedText != normalizedSkip {
 		var minAge, maxAge int
-		n, err := fmt.Sscanf(text, "%d-%d", &minAge, &maxAge)
+		n, err := fmt.Sscanf(utils.NormalizePersianNumbers(text), "%d-%d", &minAge, &maxAge)
 		if err != nil || n < 2 {
 			// Try single number
 			var age int
-			_, err2 := fmt.Sscanf(text, "%d", &age)
+			_, err2 := fmt.Sscanf(utils.NormalizePersianNumbers(text), "%d", &age)
 			if err2 != nil {
 				bot.SendMessage(userID, "❌ فرمت نامعتبر! لطفاً به صورت 20-30 وارد کن یا رد شو بزن.", nil)
 				return
@@ -261,11 +266,17 @@ func (h *HandlerManager) findMatch(userID uint, queue *models.MatchmakingQueue, 
 			}
 
 			// Try to find a match
+			var provinces []string
+			if queue.TargetProvinces != "" {
+				provinces = strings.Split(queue.TargetProvinces, ",")
+			}
+
 			matchedUser, err := h.MatchRepo.FindMatch(userID, &models.MatchFilters{
-				Gender: queue.RequestedGender,
-				MinAge: queue.MinAge,
-				MaxAge: queue.MaxAge,
-				City:   queue.City,
+				Gender:    queue.RequestedGender,
+				MinAge:    queue.MinAge,
+				MaxAge:    queue.MaxAge,
+				City:      queue.City,
+				Provinces: provinces,
 			})
 
 			if err != nil {
@@ -458,4 +469,125 @@ func (h *HandlerManager) EndChat(userID int64, bot BotInterface) {
 	}
 
 	logger.Info("Match ended", "match_id", match.ID, "ended_by", user.ID)
+}
+
+// HandleAdvancedSearchAge handles the callback for advanced age selection
+func (h *HandlerManager) HandleAdvancedSearchAge(userID int64, data string, msgID int, session *UserSession, bot BotInterface) {
+	// data format: search_age_{step}_{value} -> search_age_select_25
+	// actually I used: search_age_{step}_{age} in keyboard, let's refine.
+	// Step 1: User picks Start Age. Logic:
+	// If session["adv_age_min"] is nil, set it. Update text to "Select Max Age".
+	// If set, set "adv_age_max". If min > max, swap. Proceed to Province.
+
+	parts := strings.Split(data, "_")
+	if len(parts) < 3 {
+		return
+	}
+
+	action := parts[2] // select, skip, etc.
+
+	if action == "skip" {
+		session.State = "advanced_search_province"
+		session.Data["adv_selected_provinces"] = make(map[string]bool)
+		bot.EditMessage(userID, msgID, "📍 استان‌های مورد نظر رو انتخاب کن (چندین مورد مجازه):", AdvancedSearchProvinceKeyboard(nil))
+		return
+	}
+
+	age, _ := strconv.Atoi(parts[3])
+
+	// Check if min is set
+	if _, ok := session.Data["adv_age_min"]; !ok {
+		session.Data["adv_age_min"] = age
+		bot.EditMessage(userID, msgID, fmt.Sprintf("🎂 سن شروع: %d\nحالا سن پایان بازه را انتخاب کنید:", age), AdvancedSearchAgeKeyboard("max"))
+	} else {
+		minAge := session.Data["adv_age_min"].(int)
+		maxAge := age
+
+		if minAge > maxAge {
+			minAge, maxAge = maxAge, minAge
+		}
+
+		session.Data["min_age"] = minAge
+		session.Data["max_age"] = maxAge
+
+		// Proceed to Province
+		session.State = "advanced_search_province"
+		session.Data["adv_selected_provinces"] = make(map[string]bool) // Init map
+		bot.EditMessage(userID, msgID, fmt.Sprintf("✅ بازه سنی: %d تا %d\n\n📍 حالا استان‌های مورد نظر رو انتخاب کن:", minAge, maxAge), AdvancedSearchProvinceKeyboard(nil))
+	}
+}
+
+// HandleAdvancedSearchProvince handles the callback for advanced province selection
+func (h *HandlerManager) HandleAdvancedSearchProvince(userID int64, data string, msgID int, session *UserSession, bot BotInterface) {
+	// data: search_province_{action}_{value}
+	parts := strings.Split(data, "_")
+	if len(parts) < 3 {
+		return
+	}
+
+	action := parts[2]
+
+	// Get current selection from session
+	selected, ok := session.Data["adv_selected_provinces"].(map[string]bool)
+	if !ok {
+		selected = make(map[string]bool)
+	}
+
+	if action == "skip" {
+		// Clear provinces filter
+		session.Data["search_provinces"] = []string{}
+		h.finalizeAdvancedSearch(userID, session, bot)
+		return
+	}
+
+	if action == "confirm" {
+		// Convert map to slice
+		var provinces []string
+		for p, isSelected := range selected {
+			if isSelected {
+				provinces = append(provinces, p)
+			}
+		}
+		session.Data["search_provinces"] = provinces
+		h.finalizeAdvancedSearch(userID, session, bot)
+		return
+	}
+
+	if action == "all" {
+		// Toggle all? Or just select all? Let's say select all "major" ones or just ignore logic for now as it overrides everything.
+		// For simplicity, let's treat "All" as "Any" in filter.
+		session.Data["search_provinces"] = []string{} // Empty means any
+		h.finalizeAdvancedSearch(userID, session, bot)
+		return
+	}
+
+	if action == "toggle" {
+		if len(parts) >= 4 {
+			province := parts[3]
+			if selected[province] {
+				delete(selected, province)
+			} else {
+				selected[province] = true
+			}
+			session.Data["adv_selected_provinces"] = selected
+
+			// Update keyboard
+			bot.EditMessageReplyMarkup(userID, msgID, AdvancedSearchProvinceKeyboard(selected))
+		}
+	}
+}
+
+func (h *HandlerManager) finalizeAdvancedSearch(userID int64, session *UserSession, bot BotInterface) {
+	// Cleanup temporary session keys
+	delete(session.Data, "adv_age_min")
+	delete(session.Data, "adv_selected_provinces")
+
+	// Prepare StartMatchmaking
+	gender := models.RequestedGenderAny
+	if g, ok := session.Data["search_gender"].(string); ok {
+		gender = g
+	}
+
+	session.State = "" // Clear state
+	h.StartMatchmaking(userID, gender, session, bot)
 }

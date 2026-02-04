@@ -75,7 +75,24 @@ func (r *MatchRepository) FindMatch(userID uint, filters *models.MatchFilters) (
 	}
 
 	if filters.City != "" {
+		// Exact city match
 		query = query.Where("(users.city = ? OR matchmaking_queue.city = ?)", filters.City, filters.City)
+	}
+
+	if len(filters.Provinces) > 0 {
+		// User wants one of these provinces
+		// AND the target user must be in one of those provinces
+		query = query.Where("users.province IN ?", filters.Provinces)
+	}
+
+	// Bidirectional check: The match candidate (User B) must also accept searchingUser's (User A) province.
+	// User B's preferences are in `matchmaking_queue` table.
+	// If User B has specified TargetProvinces, User A's province must be in that list.
+	// If User B's TargetProvinces is empty, they accept any province.
+	// Note: We use LIKE for simplicity as data is comma-separated.
+	// To be robust against similar names, we might want exact match but provinces are usually distinct enough.
+	if searchingUser.Province != "" {
+		query = query.Where("(matchmaking_queue.target_provinces = '' OR matchmaking_queue.target_provinces IS NULL OR matchmaking_queue.target_provinces LIKE ?)", "%"+searchingUser.Province+"%")
 	}
 
 	// Also check if the other user wants to match with this user's gender

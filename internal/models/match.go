@@ -36,6 +36,7 @@ type MatchmakingQueue struct {
 	MinAge          *int      `gorm:"index"`
 	MaxAge          *int      `gorm:"index"`
 	City            string    `gorm:"type:varchar(100);index"`
+	TargetProvinces string    `gorm:"type:text"` // Comma separated list of provinces
 	CoinsPaid       int64     `gorm:"default:5;index"`
 	CreatedAt       time.Time `gorm:"autoCreateTime;index"`
 }
@@ -53,8 +54,9 @@ func (MatchmakingQueue) TableName() string {
 
 // MatchFilters for searching
 type MatchFilters struct {
-	Gender string
-	MinAge *int
-	MaxAge *int
-	City   string
+	Gender    string
+	MinAge    *int
+	MaxAge    *int
+	City      string
+	Provinces []string
 }

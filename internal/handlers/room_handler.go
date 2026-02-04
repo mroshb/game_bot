@@ -8,6 +8,7 @@ import (
 	"github.com/mroshb/game_bot/internal/models"
 	"github.com/mroshb/game_bot/pkg/errors"
 	"github.com/mroshb/game_bot/pkg/logger"
+	"github.com/mroshb/game_bot/pkg/utils"
 )
 
 type RoomSession struct {
@@ -134,7 +135,7 @@ func (h *HandlerManager) HandleRoomCreation(message *tgbotapi.Message, session *
 
 	case StateRoomMaxPlayers:
 		var maxPlayers int
-		_, err := fmt.Sscanf(text, "%d", &maxPlayers)
+		_, err := fmt.Sscanf(utils.NormalizePersianNumbers(text), "%d", &maxPlayers)
 		if err != nil || maxPlayers < 2 || maxPlayers > 10 {
 			bot.SendMessage(userID, "❌ لطفاً یک عدد بین 2 تا 10 وارد کن!", nil)
 			return
@@ -160,7 +161,7 @@ func (h *HandlerManager) HandleRoomCreation(message *tgbotapi.Message, session *
 
 	case StateRoomEntryFee:
 		var entryFee int64
-		_, err := fmt.Sscanf(text, "%d", &entryFee)
+		_, err := fmt.Sscanf(utils.NormalizePersianNumbers(text), "%d", &entryFee)
 		if err != nil || entryFee < 0 {
 			bot.SendMessage(userID, "❌ لطفاً یک مبلغ معتبر وارد کن!", nil)
 			return
@@ -384,7 +385,7 @@ func (h *HandlerManager) JoinRoom(userID int64, roomID uint, bot BotInterface) {
 // JoinRoomByCode handles joining a room by invite code
 func (h *HandlerManager) JoinRoomByCode(userID int64, inviteCode string, bot BotInterface) {
 	// Find room by invite code
-	room, err := h.RoomRepo.GetRoomByInviteCode(strings.TrimSpace(inviteCode))
+	room, err := h.RoomRepo.GetRoomByInviteCode(utils.NormalizePersianNumbers(strings.TrimSpace(inviteCode)))
 	if err != nil {
 		bot.SendMessage(userID, "❌ کد دعوت نامعتبر است!", nil)
 		return

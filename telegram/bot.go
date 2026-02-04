@@ -13,6 +13,7 @@ import (
 	"github.com/mroshb/game_bot/internal/repositories"
 	"github.com/mroshb/game_bot/internal/services"
 	"github.com/mroshb/game_bot/pkg/logger"
+	"github.com/mroshb/game_bot/pkg/utils"
 	"gorm.io/gorm"
 )
 
@@ -459,13 +460,13 @@ func (b *Bot) handleCommand(message *tgbotapi.Message, isRegistered bool) {
 		args := message.CommandArguments()
 		if args != "" && strings.HasPrefix(args, "ref_") {
 			var refID int64
-			fmt.Sscanf(args, "ref_%d", &refID)
+			fmt.Sscanf(utils.NormalizePersianNumbers(args), "ref_%d", &refID)
 			if refID != 0 && refID != userID {
 				b.getSession(userID).Data["referrer_id"] = uint(refID)
 			}
 		} else if args != "" && strings.HasPrefix(args, "vjoin_") {
 			var villageID uint
-			fmt.Sscanf(args, "vjoin_%d", &villageID)
+			fmt.Sscanf(utils.NormalizePersianNumbers(args), "vjoin_%d", &villageID)
 			if villageID != 0 {
 				b.handlers.JoinVillageByID(userID, villageID, b)
 				return
@@ -862,6 +863,39 @@ func (b *Bot) handleCallbackQuery(query *tgbotapi.CallbackQuery) {
 		// In a real app we would pass the filter to ShowLeaderboard
 		// For now we just refresh it
 		b.handlers.ShowLeaderboard(userID, b)
+		return
+	}
+
+	// Advanced Search Callbacks
+	if strings.HasPrefix(data, "search_age_") {
+		session := b.getSession(userID)
+		handlerSession := &handlers.UserSession{
+			State: session.State,
+			Data:  session.Data,
+		}
+		msgID := 0
+		if query.Message != nil {
+			msgID = query.Message.MessageID
+		}
+		b.handlers.HandleAdvancedSearchAge(userID, data, msgID, handlerSession, b)
+		session.State = handlerSession.State
+		session.Data = handlerSession.Data
+		return
+	}
+
+	if strings.HasPrefix(data, "search_province_") {
+		session := b.getSession(userID)
+		handlerSession := &handlers.UserSession{
+			State: session.State,
+			Data:  session.Data,
+		}
+		msgID := 0
+		if query.Message != nil {
+			msgID = query.Message.MessageID
+		}
+		b.handlers.HandleAdvancedSearchProvince(userID, data, msgID, handlerSession, b)
+		session.State = handlerSession.State
+		session.Data = handlerSession.Data
 		return
 	}
 
@@ -1456,6 +1490,13 @@ func (b *Bot) Stop() {
 	b.api.StopReceivingUpdates()
 	logger.Info("Bot stopped receiving updates")
 }
+func (b *Bot) EditMessageReplyMarkup(chatID int64, messageID int, keyboard interface{}) {
+	if kb, ok := keyboard.(tgbotapi.InlineKeyboardMarkup); ok {
+		edit := tgbotapi.NewEditMessageReplyMarkup(chatID, messageID, kb)
+		b.api.Request(edit)
+	}
+}
+
 func (b *Bot) SendPhoto(chatID int64, photoID string, caption string, keyboard interface{}) int {
 	return b.sendPhoto(chatID, photoID, caption, keyboard)
 }
