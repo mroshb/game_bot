@@ -731,11 +731,22 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 		clearState()
 		b.startSearchFlow(userID)
 
-	case normalizeButton(BtnFemale):
-		b.handlers.StartMatchmaking(userID, models.GenderFemale, b.getSession(userID), b)
+	case normalizeButton(BtnFemale), normalizeButton(BtnMale), normalizeButton(BtnAny):
+		if b.getSession(userID).State == handlers.StateSearchGender {
+			return false // Allow state handler to process the selection
+		}
+		gender := models.RequestedGenderAny
+		if btn == normalizeButton(BtnFemale) {
+			gender = models.GenderFemale
+		} else if btn == normalizeButton(BtnMale) {
+			gender = models.GenderMale
+		}
+		b.handlers.StartMatchmaking(userID, gender, b.getSession(userID), b)
 
-	case normalizeButton(BtnMale):
-		b.handlers.StartMatchmaking(userID, models.GenderMale, b.getSession(userID), b)
+	case normalizeButton(BtnSkip):
+		if b.getSession(userID).State == handlers.StateSearchAge || b.getSession(userID).State == handlers.StateSearchCity {
+			return false // Allow state handler to process the skip
+		}
 
 	case normalizeButton(BtnFilterNearMe):
 		b.sendMessage(userID, "📍 برای مشاهده کاربران نزدیک، لطفاً لوکیشن خود را از منوی پیوست (آیکون گیره 📎) ارسال کنید.", nil)
@@ -756,12 +767,21 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 
 	case normalizeButton(BtnCoins):
 		clearState()
+		b.sendMessage(userID, "💰 مدیریت سکه‌ها:\n\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:", CoinsMenuKeyboard())
+
+	case normalizeButton(BtnIncreaseCoins):
+		clearState()
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData(BtnIHavePaid, "btn:"+BtnIHavePaid),
 			),
 		)
 		b.sendMessage(userID, MsgCoinPurchasePlans, keyboard)
+
+	case normalizeButton(BtnShowBalance):
+		clearState()
+		user, _ := b.handlers.UserRepo.GetUserByTelegramID(userID)
+		b.handlers.ShowCoins(userID, user, b)
 
 	case normalizeButton(BtnNotifications):
 		b.sendMessage(userID, "🔔 اعلان‌ها فعال/غیرفعال شد (به زودی...)", nil)
@@ -817,15 +837,13 @@ func (b *Bot) handleCallbackQuery(query *tgbotapi.CallbackQuery) {
 
 	if strings.HasPrefix(data, "btn:") {
 		btnText := strings.TrimPrefix(data, "btn:")
-		// Simulate a message for handleButtonPress
+		// Simulate a message to trigger full message handling (including states)
 		fakeMsg := &tgbotapi.Message{
 			From: query.From,
 			Chat: query.Message.Chat,
 			Text: btnText,
 		}
-		user, _ := b.handlers.UserRepo.GetUserByTelegramID(userID)
-		isRegistered := user != nil
-		b.handleButtonPress(fakeMsg, user, isRegistered)
+		b.handleMessage(fakeMsg)
 		return
 	}
 
@@ -962,15 +980,35 @@ func (b *Bot) handleCallbackQuery(query *tgbotapi.CallbackQuery) {
 		return
 	}
 
+	if strings.HasPrefix(data, "qcat_") {
+		var matchID uint
+		var category string
+		// Extract category by finding the second underscore
+		parts := strings.SplitN(data, "_", 3)
+		if len(parts) == 3 {
+			matchID_int, _ := fmt.Sscanf(parts[1], "%d", &matchID)
+			if matchID_int > 0 {
+				category = parts[2]
+				b.handlers.HandleQuizCategorySelection(userID, matchID, category, b)
+			}
+		}
+		return
+	}
+
+	if strings.HasPrefix(data, "qans_") {
+		var matchID uint
+		var qIdx, answerIndex int
+		fmt.Sscanf(data, "qans_%d_%d_%d", &matchID, &qIdx, &answerIndex)
+		b.handlers.HandleQuizAnswer(userID, matchID, qIdx, answerIndex, b)
+		return
+	}
+
 	if strings.HasPrefix(data, "quiz_") {
 		var matchID uint
-		var answerIndex int
-		fmt.Sscanf(data, "quiz_%d_%d", &matchID, &answerIndex)
-		msgID := 0
-		if query.Message != nil {
-			msgID = query.Message.MessageID
-		}
-		b.handlers.HandleQuizAnswer(userID, msgID, matchID, answerIndex, b)
+		var answerIdx int
+		fmt.Sscanf(data, "quiz_%d_%d", &matchID, &answerIdx)
+		// Fix old quiz callback - assuming current question if unknown, or just ignore
+		b.handlers.HandleQuizAnswer(userID, matchID, 0, answerIdx, b)
 		return
 	}
 
@@ -1308,6 +1346,7 @@ func (b *Bot) sendMessage(chatID int64, text string, keyboard interface{}) int {
 	// Add RTL mark for Persian support
 	rtlText := "\u200f" + text
 	msg := tgbotapi.NewMessage(chatID, rtlText)
+	msg.ParseMode = tgbotapi.ModeHTML
 
 	switch kb := keyboard.(type) {
 	case tgbotapi.ReplyKeyboardMarkup:
@@ -1356,6 +1395,7 @@ func (b *Bot) EditMessage(chatID int64, messageID int, text string, keyboard int
 	// Add RTL mark
 	rtlText := "\u200f" + text
 	msg := tgbotapi.NewEditMessageText(chatID, messageID, rtlText)
+	msg.ParseMode = tgbotapi.ModeHTML
 
 	if keyboard != nil {
 		if kb, ok := keyboard.(tgbotapi.InlineKeyboardMarkup); ok {

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -108,8 +109,11 @@ func (h *HandlerManager) HandleSearchGenderSelection(message *tgbotapi.Message, 
 	userID := message.From.ID
 	text := message.Text
 
+	normalizedText := strings.ReplaceAll(text, "\u200c", "")
+	normalizedCancel := strings.ReplaceAll(BtnCancel, "\u200c", "")
+
 	// Handle Cancel
-	if text == BtnCancel {
+	if normalizedText == normalizedCancel {
 		user, _ := h.UserRepo.GetUserByTelegramID(userID)
 		isAdmin := false
 		if user != nil {
@@ -121,12 +125,12 @@ func (h *HandlerManager) HandleSearchGenderSelection(message *tgbotapi.Message, 
 	}
 
 	var requestedGender string
-	switch text {
-	case BtnMale:
+	switch normalizedText {
+	case strings.ReplaceAll(BtnMale, "\u200c", ""):
 		requestedGender = models.GenderMale
-	case BtnFemale:
+	case strings.ReplaceAll(BtnFemale, "\u200c", ""):
 		requestedGender = models.GenderFemale
-	case BtnAny:
+	case strings.ReplaceAll(BtnAny, "\u200c", ""):
 		requestedGender = models.RequestedGenderAny
 	default:
 		bot.SendMessage(userID, "❌ لطفاً یکی از گزینه‌های لیست رو انتخاب کن!", nil)
@@ -151,20 +155,33 @@ func (h *HandlerManager) HandleSearchAgeSelection(message *tgbotapi.Message, ses
 		return
 	}
 
-	if text != BtnSkip {
+	normalizedText := strings.ReplaceAll(text, "\u200c", "")
+	normalizedSkip := strings.ReplaceAll(BtnSkip, "\u200c", "")
+
+	if normalizedText != normalizedSkip {
 		var minAge, maxAge int
-		_, err := fmt.Sscanf(text, "%d-%d", &minAge, &maxAge)
-		if err != nil {
+		n, err := fmt.Sscanf(text, "%d-%d", &minAge, &maxAge)
+		if err != nil || n < 2 {
 			// Try single number
-			// If single number, maybe exact match or +/- range? Let's assume range format is required for simplicity or lenient parsing.
-			// Let's enforce range or simple age.
-			bot.SendMessage(userID, "❌ فرمت نامعتبر! لطفاً به صورت 20-30 وارد کن یا رد شو بزن.", nil)
-			return
+			var age int
+			_, err2 := fmt.Sscanf(text, "%d", &age)
+			if err2 != nil {
+				bot.SendMessage(userID, "❌ فرمت نامعتبر! لطفاً به صورت 20-30 وارد کن یا رد شو بزن.", nil)
+				return
+			}
+			// Single age: assume range of +/- 2 years
+			minAge = age - 2
+			maxAge = age + 2
 		}
 
-		if minAge < 13 || maxAge > 100 || minAge > maxAge {
-			bot.SendMessage(userID, "❌ محدوده سنی نامعتبر است!", nil)
-			return
+		if minAge < 13 {
+			minAge = 13
+		}
+		if maxAge > 100 {
+			maxAge = 100
+		}
+		if minAge > maxAge {
+			minAge, maxAge = maxAge, minAge
 		}
 
 		session.Data["min_age"] = minAge
@@ -187,7 +204,10 @@ func (h *HandlerManager) HandleSearchCitySelection(message *tgbotapi.Message, se
 		return
 	}
 
-	if text != BtnSkip {
+	normalizedText := strings.ReplaceAll(text, "\u200c", "")
+	normalizedSkip := strings.ReplaceAll(BtnSkip, "\u200c", "")
+
+	if normalizedText != normalizedSkip {
 		// Basic validation, maybe check against list of provinces but free text search is also fine for flexibility?
 		// User list uses exact match on City field.
 		// Let's validate against our known list if possible, or just accept.
@@ -282,6 +302,18 @@ func (h *HandlerManager) createMatchSession(user1ID, user2ID uint, tg1ID, tg2ID 
 	h.UserRepo.UpdateUserStatus(user1ID, models.UserStatusInMatch)
 	h.UserRepo.UpdateUserStatus(user2ID, models.UserStatusInMatch)
 
+	// Get users
+	user1, _ := h.UserRepo.GetUserByID(user1ID)
+	user2, _ := h.UserRepo.GetUserByID(user2ID)
+
+	// Send profiles to each other
+	if user1 != nil && user2 != nil {
+		// Send user2's profile to user1
+		h.ShowProfile(tg1ID, user2, bot)
+		// Send user1's profile to user2
+		h.ShowProfile(tg2ID, user1, bot)
+	}
+
 	// Notify both users
 	msg := fmt.Sprintf("✅ پیدا شد!\n\nیک نفر پیدا کردیم! می‌تونی شروع به چت کنی.\n\n⏰ مدت زمان: %d دقیقه", h.Config.MatchTimeoutMinutes)
 	keyboard := ChatKeyboard()
@@ -292,14 +324,14 @@ func (h *HandlerManager) createMatchSession(user1ID, user2ID uint, tg1ID, tg2ID 
 	logger.Info("Match created", "session_id", session.ID, "user1", user1ID, "user2", user2ID)
 }
 
-func ChatKeyboard() tgbotapi.InlineKeyboardMarkup {
-	return tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(BtnQuiz, "btn:"+BtnQuiz),
-			tgbotapi.NewInlineKeyboardButtonData(BtnTruthDare, "btn:"+BtnTruthDare),
+func ChatKeyboard() tgbotapi.ReplyKeyboardMarkup {
+	return tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(BtnTruthDare),
+			tgbotapi.NewKeyboardButton(BtnQuiz),
 		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(BtnEndChat, "btn:"+BtnEndChat),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(BtnEndChat),
 		),
 	)
 }
@@ -409,22 +441,20 @@ func (h *HandlerManager) EndChat(userID int64, bot BotInterface) {
 	h.UserRepo.UpdateUserStatus(user.ID, models.UserStatusOnline)
 	if otherUser != nil {
 		h.UserRepo.UpdateUserStatus(otherUser.ID, models.UserStatusOnline)
+
+		otherIsAdmin := otherUser.TelegramID == h.Config.SuperAdminTgID
+		bot.SendMessage(otherUser.TelegramID, "👋 طرف مقابل چت را ترک کرد.", bot.GetMainMenuKeyboard(otherIsAdmin))
 	}
+
+	h.CleanupQuizSession(match.ID)
+
+	isAdmin := user.TelegramID == h.Config.SuperAdminTgID
+	bot.SendMessage(userID, "👋 چت با موفقیت با طرف مقابل پایان یافت.", bot.GetMainMenuKeyboard(isAdmin))
 
 	// Award Village XP for finishing a chat
 	h.VillageSvc.AddXPForUser(user.ID, 10)
 	if otherUser != nil {
 		h.VillageSvc.AddXPForUser(otherUser.ID, 10)
-	}
-
-	// Notify both users
-	// Notify both users
-	isAdmin := user.TelegramID == h.Config.SuperAdminTgID
-	bot.SendMessage(userID, "👋 چت تموم شد!\n\nامیدواریم لذت برده باشی.", bot.GetMainMenuKeyboard(isAdmin))
-
-	if otherUser != nil {
-		otherIsAdmin := otherUser.TelegramID == h.Config.SuperAdminTgID
-		bot.SendMessage(otherUser.TelegramID, "👋 طرف مقابل چت رو ترک کرد.", bot.GetMainMenuKeyboard(otherIsAdmin))
 	}
 
 	logger.Info("Match ended", "match_id", match.ID, "ended_by", user.ID)

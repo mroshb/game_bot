@@ -475,3 +475,16 @@ func VillageHubKeyboard(hasVillage bool) tgbotapi.InlineKeyboardMarkup {
 
 	return tgbotapi.NewInlineKeyboardMarkup(rows...)
 }
+
+// CoinsMenuKeyboard creates the coins sub-menu
+func CoinsMenuKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("➕ افزایش سکه", "btn:➕ افزایش سکه"),
+			tgbotapi.NewInlineKeyboardButtonData("📊 موجودی", "btn:📊 موجودی"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 بازگشت", "btn:🔙 بازگشت"),
+		),
+	)
+}

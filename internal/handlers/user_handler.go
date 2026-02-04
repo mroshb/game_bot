@@ -494,7 +494,7 @@ func (h *HandlerManager) ShowLeaderboard(userID int64, bot BotInterface) {
 		return
 	}
 
-	leaderboardMsg := "🏆 جدول برترینها (۱۰ نفر اول):\n\n"
+	leaderboardMsg := "<b>🏆 جدول برترینها (۱۰ نفر اول):</b>\n\n"
 	for i, u := range users {
 		medal := ""
 		switch i {
@@ -511,7 +511,7 @@ func (h *HandlerManager) ShowLeaderboard(userID int64, bot BotInterface) {
 	}
 
 	userRank, _ := h.UserRepo.GetUserRank(uint(userID))
-	leaderboardMsg += fmt.Sprintf("\n--------------------\n🏅 رتبه شما: %d", userRank)
+	leaderboardMsg += fmt.Sprintf("\n--------------------\n🏅 رتبه شما: <b>%d</b>", userRank)
 
 	// Filters keyboard
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(

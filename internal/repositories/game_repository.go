@@ -50,6 +50,39 @@ func (r *GameRepository) GetQuizQuestions(count int) ([]models.Question, error) 
 	return questions, nil
 }
 
+// GetQuizCategories retrieves unique quiz categories
+func (r *GameRepository) GetQuizCategories(count int) ([]string, error) {
+	var categories []string
+	result := r.db.Model(&models.Question{}).
+		Where("question_type = ?", models.QuestionTypeQuiz).
+		Where("category IS NOT NULL AND category != ''").
+		Distinct("category").
+		Order("RANDOM()").
+		Limit(count).
+		Pluck("category", &categories)
+
+	if result.Error != nil {
+		return nil, errors.Wrap(result.Error, errors.ErrCodeInternalError, "failed to get quiz categories")
+	}
+
+	return categories, nil
+}
+
+// GetQuestionsByCategory retrieves random questions from a specific category
+func (r *GameRepository) GetQuestionsByCategory(category string, count int) ([]models.Question, error) {
+	var questions []models.Question
+	result := r.db.Where("question_type = ? AND category = ?", models.QuestionTypeQuiz, category).
+		Order("RANDOM()").
+		Limit(count).
+		Find(&questions)
+
+	if result.Error != nil {
+		return nil, errors.Wrap(result.Error, errors.ErrCodeInternalError, "failed to get questions by category")
+	}
+
+	return questions, nil
+}
+
 // CreateGameSession creates a new game session
 func (r *GameRepository) CreateGameSession(roomID uint, gameType string) (*models.GameSession, error) {
 	session := &models.GameSession{
