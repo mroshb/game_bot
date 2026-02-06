@@ -81,10 +81,12 @@ func InitBot(cfg *config.Config, db *gorm.DB) (*Bot, error) {
 	gameRepo := repositories.NewGameRepository(db)
 	roomRepo := repositories.NewRoomRepository(db)
 	villageRepo := repositories.NewVillageRepository(db)
+	quizMatchRepo := repositories.NewQuizMatchRepository(db)
+	todRepo := repositories.NewTodRepository(db)
 	villageSvc := services.NewVillageService(villageRepo, userRepo)
 
 	// Initialize handler manager
-	handlerMgr := handlers.NewHandlerManager(cfg, db, userRepo, coinRepo, matchRepo, friendRepo, gameRepo, roomRepo, villageRepo, villageSvc)
+	handlerMgr := handlers.NewHandlerManager(cfg, db, userRepo, coinRepo, matchRepo, friendRepo, gameRepo, roomRepo, villageRepo, quizMatchRepo, todRepo, villageSvc)
 
 	bot := &Bot{
 		api:         api,
@@ -106,6 +108,9 @@ func InitBot(cfg *config.Config, db *gorm.DB) (*Bot, error) {
 
 	// Start background jobs
 	go bot.startBackgroundJobs()
+
+	// Start Truth or Dare background jobs
+	go bot.StartTodBackgroundJobs()
 
 	return bot, nil
 }
@@ -162,6 +167,9 @@ func (b *Bot) startBackgroundJobs() {
 			}
 		}
 
+		// Check Quiz Match Timeouts (3 days)
+		b.handlers.CheckQuizTimeouts(b)
+
 		// Mark inactive users offline (e.g. 10 minutes)
 		if count, err := b.handlers.UserRepo.MarkInactiveUsersOffline(10 * time.Minute); err == nil && count > 0 {
 			logger.Debug("Marked inactive users offline", "count", count)
@@ -203,22 +211,14 @@ func (b *Bot) handleMessage(message *tgbotapi.Message) {
 
 	// Update activity and status to online if registered
 	if isRegistered {
-		// Only update if not in specific states like searching or in_match to avoid overwriting them?
-		// "Status" field usually denotes "Activity Status" like Online vs Offline.
-		// Our models have "searching" and "in_match" as statuses too.
-		// If user sends a message, they are "Online". But if they are "in_match", they are still "Online" technically but busy.
-		// However, the requested feature says: "Update user status (online, searching, in_match, offline)".
-		// If they are in match, status is 'in_match'. If they type, it remains 'in_match'.
-		// If they are 'searching', and type /cancel, it becomes 'online'.
-		// If they are just browsing menu, it should be 'online'.
-		// So we only force 'online' if current status is 'offline' or if we want to refresh 'online'.
-		// We should NOT overwrite 'in_match' or 'searching' with 'online' just because they typed a button.
-		// Unless they type 'cancel'.
-		// Let's just update UpdateLastActivity timestamp always.
-		// And if status is 'offline', set to 'online'.
 		b.handlers.UserRepo.UpdateLastActivity(user.ID)
 		if user.Status == models.UserStatusOffline {
 			b.handlers.UserRepo.UpdateUserStatus(user.ID, models.UserStatusOnline)
+		}
+
+		// Truth or Dare message handling (for proof submission)
+		if b.HandleTodMessages(message) {
+			return
 		}
 	}
 
@@ -588,9 +588,11 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 		match, _ := b.handlers.MatchRepo.GetActiveMatch(user.ID)
 
 		if match != nil {
-			b.handlers.StartTruthOrDare(userID, b)
+			// Start ToD game with existing match
+			b.handlers.StartTodGameWithMatch(userID, match.ID, b)
 		} else {
-			b.sendMessage(userID, "🤔 بخش جرعت یا حقیقت:\n\nمی‌خوای اتاق بسازی یا دنبال اتاق می‌گردی؟", TruthDareRoomKeyboard())
+			// Show room selection or random matchmaking specifically for ToD
+			b.sendMessage(userID, "🔥 بخش جرعت یا حقیقت:\n\nمی‌خوای با کی بازی کنی؟", TruthDareRoomKeyboard())
 		}
 
 	case normalizeButton(BtnCreateRoom):
@@ -603,6 +605,8 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 
 	case normalizeButton(BtnRandomMatch):
 		clearState()
+		// If we know they came from ToD menu, maybe we should start ToD matchmaking?
+		// For now, let's stick to the callback "btn:tod_new_game" for specific ToD matchmaking.
 		b.handlers.StartMatchmaking(userID, models.RequestedGenderAny, b.getSession(userID), b)
 
 	case normalizeButton(BtnOneVsOneRandom):
@@ -617,10 +621,10 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 			if gameType == "quiz" {
 				b.handlers.StartQuiz(userID, b)
 			} else {
-				b.handlers.StartTruthOrDare(userID, b)
+				b.handlers.StartTodGameWithMatch(userID, match.ID, b)
 			}
 		} else {
-			// Not in match, start search for a random person
+			// Start matchmaking for 1v1
 			b.handlers.StartMatchmaking(userID, models.RequestedGenderAny, b.getSession(userID), b)
 		}
 
@@ -757,14 +761,42 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 		b.sendMessage(userID, "⚙️ تنظیمات و راهنمای بازی:", SettingsHelpKeyboard())
 
 	case normalizeButton(BtnReferral):
+		// Get user's referral statistics
+		user, _ := b.handlers.UserRepo.GetUserByTelegramID(userID)
+		if user == nil {
+			return true
+		}
+
+		referralCount, _ := b.handlers.UserRepo.GetReferralCount(user.ID)
+
+		// Calculate total rewards earned from referrals (100 coins per referral)
+		totalRewards := referralCount * 100
+
 		botUser, _ := b.api.GetMe()
 		inviteLink := fmt.Sprintf("https://t.me/%s?start=ref_%d", botUser.UserName, userID)
+
+		// Enhanced message with statistics
+		referralMsg := fmt.Sprintf(
+			"📣 معرفی به دوستان:\n\n"+
+				"با دعوت از دوستان خود، هر دو نفر جایزه دریافت می‌کنید!\n\n"+
+				"🎁 پاداش‌ها:\n"+
+				"• شما: ۱۰۰ سکه برای هر دعوت\n"+
+				"• دوست شما: ۵۰ سکه هدیه ورود\n\n"+
+				"📊 آمار دعوت‌های شما:\n"+
+				"👥 تعداد دعوت‌ها: %d نفر\n"+
+				"💰 کل پاداش دریافتی: %d سکه\n\n"+
+				"🔗 لینک دعوت اختصاصی شما:\n%s",
+			referralCount,
+			totalRewards,
+			inviteLink,
+		)
+
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonURL("📣 اشتراک‌گذاری با دوستان", fmt.Sprintf("https://t.me/share/url?url=%s&text=%s", inviteLink, "کلی بازی و چت باحال! بیا دهکده ما 🎮")),
 			),
 		)
-		b.sendMessage(userID, "📣 معرفی به دوستان:\n\nبا دعوت از دوستان خود، ۲۰٪ از اولین خرید آن‌ها را به عنوان جایزه دریافت کنید!\n\n🔗 لینک دعوت اختصاصی شما:\n"+inviteLink, keyboard)
+		b.sendMessage(userID, referralMsg, keyboard)
 
 	case normalizeButton(BtnCoins):
 		clearState()
@@ -835,6 +867,11 @@ func (b *Bot) handleCallbackQuery(query *tgbotapi.CallbackQuery) {
 	// Delegate to handlers based on prefix
 	data := query.Data
 	userID := query.From.ID
+
+	// Truth or Dare game callbacks
+	if b.HandleTodCallbacks(query, data) {
+		return
+	}
 
 	if strings.HasPrefix(data, "btn:") {
 		btnText := strings.TrimPrefix(data, "btn:")
@@ -1045,6 +1082,80 @@ func (b *Bot) handleCallbackQuery(query *tgbotapi.CallbackQuery) {
 		b.handlers.HandleQuizAnswer(userID, matchID, 0, answerIdx, b)
 		return
 	}
+
+	// ========================================
+	// NEW QUIZ GAME CALLBACKS
+	// ========================================
+
+	// Show active quiz games (Glass Menu)
+	if data == "quiz_games" {
+		b.handlers.ShowActiveQuizGames(userID, b)
+		return
+	}
+
+	// New quiz game
+	if data == "new_quiz_game" {
+		b.handlers.StartNewQuizGame(userID, b)
+		return
+	}
+
+	// Game detail
+	if strings.HasPrefix(data, "qgame_") {
+		var matchID uint
+		fmt.Sscanf(data, "qgame_%d", &matchID)
+		b.handlers.ShowQuizGameDetail(userID, matchID, b)
+		return
+	}
+
+	// Start round (category selection)
+	if strings.HasPrefix(data, "qstart_") {
+		var matchID uint
+		fmt.Sscanf(data, "qstart_%d", &matchID)
+		b.handlers.ShowCategorySelection(userID, matchID, b)
+		return
+	}
+
+	// Category selection (new format)
+	if strings.HasPrefix(data, "qcat_") {
+		parts := strings.SplitN(data, "_", 3)
+		if len(parts) == 3 {
+			var matchID uint
+			fmt.Sscanf(parts[1], "%d", &matchID)
+			category := parts[2]
+			b.handlers.HandleCategorySelection(userID, matchID, category, b)
+		}
+		return
+	}
+
+	// Booster: Remove 2 options
+	if strings.HasPrefix(data, "qboost_r2_") {
+		var matchID uint
+		var questionNum int
+		fmt.Sscanf(data, "qboost_r2_%d_%d", &matchID, &questionNum)
+		b.handlers.HandleBoosterRemove2(userID, matchID, questionNum, b)
+		return
+	}
+
+	// Booster: Retry
+	if strings.HasPrefix(data, "qboost_rt_") {
+		var matchID uint
+		var questionNum int
+		fmt.Sscanf(data, "qboost_rt_%d_%d", &matchID, &questionNum)
+		b.handlers.HandleBoosterRetry(userID, matchID, questionNum, b)
+		return
+	}
+
+	// Notify opponent
+	if strings.HasPrefix(data, "qnotify_") {
+		var matchID uint
+		fmt.Sscanf(data, "qnotify_%d", &matchID)
+		b.handlers.NotifyQuizOpponent(userID, matchID, b)
+		return
+	}
+
+	// ========================================
+	// END NEW QUIZ GAME CALLBACKS
+	// ========================================
 
 	// Group Truth or Dare callbacks
 	// Quiz of King Callbacks

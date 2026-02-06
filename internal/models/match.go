@@ -28,6 +28,9 @@ func (MatchSession) TableName() string {
 	return "match_sessions"
 }
 
+// Match is an alias for MatchSession for compatibility
+type Match = MatchSession
+
 type MatchmakingQueue struct {
 	ID              uint      `gorm:"primaryKey"`
 	UserID          uint      `gorm:"uniqueIndex;not null"`

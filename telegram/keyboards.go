@@ -282,7 +282,7 @@ func TruthDareRoomKeyboard() tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData(BtnSearchRoom, "btn:"+BtnSearchRoom),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(BtnRandomMatch, "btn:"+BtnRandomMatch),
+			tgbotapi.NewInlineKeyboardButtonData(BtnRandomMatch, "btn:tod_new_game"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(BtnBack, "btn:"+BtnBack),

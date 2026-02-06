@@ -55,6 +55,11 @@ func main() {
 		logger.Warn("Failed to seed questions", "error", err)
 	}
 
+	// Seed Truth or Dare challenges
+	if err := database.SeedTodChallenges(db); err != nil {
+		logger.Warn("Failed to seed ToD challenges", "error", err)
+	}
+
 	// Initialize and start Telegram bot
 	bot, err := telegram.InitBot(cfg, db)
 	if err != nil {

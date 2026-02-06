@@ -277,11 +277,41 @@ func (h *HandlerManager) completeRegistration(userID int64, session *UserSession
 	}
 
 	// Handle Referral Reward
-	if referrerID, ok := session.Data["referrer_id"].(uint); ok && referrerID > 0 {
-		user.ReferrerID = referrerID
-		h.UserRepo.UpdateUser(user)
-		h.CoinRepo.AddCoins(referrerID, 50, models.TxTypeReferralReward, "پاداش دعوت")
-		h.CoinRepo.AddCoins(user.ID, 50, models.TxTypeReferralReward, "پاداش ورود با دعوت")
+	if referrerID, ok := session.Data["referrer_id"].(uint); ok && referrerID > 0 && isNew {
+		// Verify referrer exists and is not the same user
+		referrer, err := h.UserRepo.GetUserByID(referrerID)
+		if err == nil && referrer.ID != user.ID {
+			// Set referrer relationship
+			user.ReferrerID = referrerID
+			h.UserRepo.UpdateUser(user)
+
+			// Reward amounts
+			referrerReward := int64(100) // Reward for inviter
+			invitedReward := int64(50)   // Reward for new user
+
+			// Give coins to referrer (inviter)
+			h.CoinRepo.AddCoins(referrerID, referrerReward, models.TxTypeReferralReward, fmt.Sprintf("پاداش دعوت %s", user.FullName))
+
+			// Give coins to new user (invited)
+			h.CoinRepo.AddCoins(user.ID, invitedReward, models.TxTypeReferralReward, "پاداش ورود با دعوت")
+
+			// Notify referrer about successful referral
+			referralCount, _ := h.UserRepo.GetReferralCount(referrerID)
+			notificationMsg := fmt.Sprintf(
+				"🎉 تبریک! %s با لینک دعوت شما وارد بازی شد!\n\n💰 پاداش شما: %d سکه\n👥 تعداد کل دعوت‌های شما: %d نفر",
+				user.FullName,
+				referrerReward,
+				referralCount,
+			)
+			bot.SendMessage(referrer.TelegramID, notificationMsg, nil)
+
+			logger.Info("Referral reward processed",
+				"referrer_id", referrerID,
+				"new_user_id", user.ID,
+				"referrer_reward", referrerReward,
+				"invited_reward", invitedReward,
+			)
+		}
 	}
 
 	// Clear session
@@ -289,8 +319,15 @@ func (h *HandlerManager) completeRegistration(userID int64, session *UserSession
 	session.Data = make(map[string]interface{})
 
 	// Success message
-	bot.SendMessage(userID, "ثبتنامت تکمیل شد! 🎉 به عنوان هدیه ورود، ۱۰۰ سکه به کیفت اضافه شد. حالا بزن بریم!", nil)
+	welcomeMsg := "ثبتنامت تکمیل شد! 🎉 به عنوان هدیه ورود، ۱۰۰ سکه به کیفت اضافه شد."
+	if user.ReferrerID > 0 {
+		welcomeMsg += "\n\n🎁 همچنین ۵۰ سکه بابت دعوت دوست دریافت کردی!"
+	}
+	welcomeMsg += "\n\nحالا بزن بریم!"
+
+	bot.SendMessage(userID, welcomeMsg, nil)
 	bot.SendMainMenu(userID, user.TelegramID == h.Config.SuperAdminTgID)
+
 }
 
 func (h *HandlerManager) ShowProfile(userID int64, user *models.User, bot BotInterface) {
@@ -1042,4 +1079,49 @@ func (h *HandlerManager) sendUserList(userID int64, title string, users []models
 	}
 
 	bot.SendMessage(userID, message, nil)
+}
+
+// ShowReferralStats shows detailed referral statistics and list of referred users
+func (h *HandlerManager) ShowReferralStats(userID int64, bot BotInterface) {
+	user, err := h.UserRepo.GetUserByTelegramID(userID)
+	if err != nil {
+		bot.SendMessage(userID, "❌ خطا در دریافت اطلاعات!", nil)
+		return
+	}
+
+	// Get referral count
+	referralCount, _ := h.UserRepo.GetReferralCount(user.ID)
+
+	// Get list of referred users
+	referredUsers, _ := h.UserRepo.GetReferredUsers(user.ID, 10)
+
+	// Calculate total rewards
+	totalRewards := referralCount * 100
+
+	message := fmt.Sprintf(
+		"📊 آمار دعوت‌های شما:\n\n"+
+			"👥 تعداد کل دعوت‌ها: %d نفر\n"+
+			"💰 کل پاداش دریافتی: %d سکه\n"+
+			"🎁 پاداش هر دعوت: ۱۰۰ سکه\n\n",
+		referralCount,
+		totalRewards,
+	)
+
+	if len(referredUsers) > 0 {
+		message += "📋 لیست دعوت‌شدگان (۱۰ نفر اخیر):\n\n"
+		for i, u := range referredUsers {
+			joinDate := u.CreatedAt.Format("2006/01/02")
+			message += fmt.Sprintf("%d. %s - عضو از: %s\n", i+1, u.FullName, joinDate)
+		}
+	} else {
+		message += "هنوز کسی را دعوت نکرده‌اید!\n\nلینک دعوت خود را با دوستانتان به اشتراک بگذارید."
+	}
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔗 دریافت لینک دعوت", "btn:"+BtnReferral),
+		),
+	)
+
+	bot.SendMessage(userID, message, keyboard)
 }

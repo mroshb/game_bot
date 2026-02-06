@@ -10,16 +10,18 @@ import (
 )
 
 type HandlerManager struct {
-	Config      *config.Config
-	DB          *gorm.DB
-	UserRepo    *repositories.UserRepository
-	CoinRepo    *repositories.CoinRepository
-	MatchRepo   *repositories.MatchRepository
-	FriendRepo  *repositories.FriendRepository
-	GameRepo    *repositories.GameRepository
-	RoomRepo    *repositories.RoomRepository
-	VillageRepo *repositories.VillageRepository
-	VillageSvc  *services.VillageService
+	Config        *config.Config
+	DB            *gorm.DB
+	UserRepo      *repositories.UserRepository
+	CoinRepo      *repositories.CoinRepository
+	MatchRepo     *repositories.MatchRepository
+	FriendRepo    *repositories.FriendRepository
+	GameRepo      *repositories.GameRepository
+	RoomRepo      *repositories.RoomRepository
+	VillageRepo   *repositories.VillageRepository
+	QuizMatchRepo *repositories.QuizMatchRepository
+	TodRepo       *repositories.TodRepository
+	VillageSvc    *services.VillageService
 
 	searchingUsers sync.Map // userID -> chan struct{} for cancellation
 }
@@ -34,18 +36,22 @@ func NewHandlerManager(
 	gameRepo *repositories.GameRepository,
 	roomRepo *repositories.RoomRepository,
 	villageRepo *repositories.VillageRepository,
+	quizMatchRepo *repositories.QuizMatchRepository,
+	todRepo *repositories.TodRepository,
 	villageSvc *services.VillageService,
 ) *HandlerManager {
 	return &HandlerManager{
-		Config:      cfg,
-		DB:          db,
-		UserRepo:    userRepo,
-		CoinRepo:    coinRepo,
-		MatchRepo:   matchRepo,
-		FriendRepo:  friendRepo,
-		GameRepo:    gameRepo,
-		RoomRepo:    roomRepo,
-		VillageRepo: villageRepo,
-		VillageSvc:  villageSvc,
+		Config:        cfg,
+		DB:            db,
+		UserRepo:      userRepo,
+		CoinRepo:      coinRepo,
+		MatchRepo:     matchRepo,
+		FriendRepo:    friendRepo,
+		GameRepo:      gameRepo,
+		RoomRepo:      roomRepo,
+		VillageRepo:   villageRepo,
+		QuizMatchRepo: quizMatchRepo,
+		TodRepo:       todRepo,
+		VillageSvc:    villageSvc,
 	}
 }

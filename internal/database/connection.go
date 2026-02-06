@@ -45,7 +45,7 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 	// a healthy number of warm idle connections.
 	sqlDB.SetMaxIdleConns(50)                  // Keep 50 idle connections warm
 	sqlDB.SetMaxOpenConns(500)                 // Scale up to 500 connections under load
-	sqlDB.SetConnMaxLifetime(time.Hour)         // Cycle connections hourly to prevent stale leaks
+	sqlDB.SetConnMaxLifetime(time.Hour)        // Cycle connections hourly to prevent stale leaks
 	sqlDB.SetConnMaxIdleTime(10 * time.Minute) // Close idle connections after 10m to free DB resources
 
 	logger.Info("Database connected successfully with high-performance pool settings")
@@ -74,6 +74,12 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.RoomMember{},
 		&models.Village{},
 		&models.VillageMember{},
+		&models.TodGame{},
+		&models.TodTurn{},
+		&models.TodChallenge{},
+		&models.TodPlayerStats{},
+		&models.TodJudgmentLog{},
+		&models.TodActionLog{},
 	)
 
 	if err != nil {
@@ -179,4 +185,33 @@ func SeedQuestions(db *gorm.DB) error {
 	}
 
 	return nil
+}
+
+func SeedTodChallenges(db *gorm.DB) error {
+	logger.Info("Checking for Truth or Dare challenges...")
+
+	var count int64
+	db.Model(&models.TodChallenge{}).Count(&count)
+	if count > 0 {
+		return nil
+	}
+
+	logger.Info("Seeding initial Truth or Dare challenges...")
+	challenges := []models.TodChallenge{
+		// Truth Questions
+		{Type: "truth", Text: "آخرین باری که دروغ گفتی کی بود و چرا؟", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "stranger", ProofType: "text", XPReward: 15, CoinReward: 10},
+		{Type: "truth", Text: "بدترین خاطره‌ای که از مدرسه داری چیه؟", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "friend", ProofType: "text", XPReward: 15, CoinReward: 10},
+		{Type: "truth", Text: "خجالت‌آورترین اتفاقی که برات افتاده چی بوده؟", Difficulty: "easy", Category: "embarrassing", GenderTarget: "all", RelationLevel: "friend", ProofType: "text", XPReward: 18, CoinReward: 12},
+		{Type: "truth", Text: "بزرگترین ترست که داری چیه؟", Difficulty: "medium", Category: "embarrassing", GenderTarget: "all", RelationLevel: "friend", ProofType: "text", XPReward: 20, CoinReward: 15},
+		{Type: "truth", Text: "بزرگترین رازی که از کسی پنهون کردی چیه؟", Difficulty: "hard", Category: "romantic", GenderTarget: "all", RelationLevel: "close", ProofType: "text", XPReward: 30, CoinReward: 25},
+
+		// Dare Challenges
+		{Type: "dare", Text: "یه ویس بفرست و بگو: من سلطان تنبلیام!", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "stranger", ProofType: "voice", XPReward: 20, CoinReward: 15},
+		{Type: "dare", Text: "یه سلفی خنده‌دار از خودت بگیر و بفرست", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "friend", ProofType: "image", XPReward: 22, CoinReward: 18},
+		{Type: "dare", Text: "یه ویس بفرست و مثل گربه میو کن!", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "stranger", ProofType: "voice", XPReward: 20, CoinReward: 15},
+		{Type: "dare", Text: "یه ویدیو کوتاه از خودت برقص و بفرست", Difficulty: "medium", Category: "embarrassing", GenderTarget: "all", RelationLevel: "close", ProofType: "video", XPReward: 30, CoinReward: 25},
+		{Type: "dare", Text: "یه عکس سلفی با یه حالت عجیب بگیر", Difficulty: "medium", Category: "embarrassing", GenderTarget: "all", RelationLevel: "friend", ProofType: "image", XPReward: 25, CoinReward: 20},
+	}
+
+	return db.Create(&challenges).Error
 }

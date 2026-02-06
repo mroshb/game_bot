@@ -28,6 +28,7 @@ const (
 	TxTypeDailyBonus      = "daily_bonus"
 	TxTypeReferralReward  = "referral_reward"
 	TxTypeWelcomeBonus    = "welcome_bonus"
+	TxTypePenalty         = "penalty"
 )
 
 func (CoinTransaction) TableName() string {

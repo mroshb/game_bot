@@ -396,3 +396,28 @@ func (r *UserRepository) MarkInactiveUsersOffline(timeout time.Duration) (int64,
 		Update("status", models.UserStatusOffline)
 	return result.RowsAffected, result.Error
 }
+
+// GetReferralCount returns the number of users referred by a specific user
+func (r *UserRepository) GetReferralCount(userID uint) (int64, error) {
+	var count int64
+	err := r.db.Model(&models.User{}).
+		Where("referrer_id = ?", userID).
+		Count(&count).Error
+	if err != nil {
+		return 0, errors.Wrap(err, errors.ErrCodeInternalError, "failed to get referral count")
+	}
+	return count, nil
+}
+
+// GetReferredUsers returns a list of users referred by a specific user
+func (r *UserRepository) GetReferredUsers(userID uint, limit int) ([]models.User, error) {
+	var users []models.User
+	err := r.db.Where("referrer_id = ?", userID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&users).Error
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternalError, "failed to get referred users")
+	}
+	return users, nil
+}

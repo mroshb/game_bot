@@ -448,7 +448,6 @@ func (h *HandlerManager) EndChat(userID int64, bot BotInterface) {
 		return
 	}
 
-	// Update both users' status
 	h.UserRepo.UpdateUserStatus(user.ID, models.UserStatusOnline)
 	if otherUser != nil {
 		h.UserRepo.UpdateUserStatus(otherUser.ID, models.UserStatusOnline)
@@ -457,7 +456,7 @@ func (h *HandlerManager) EndChat(userID int64, bot BotInterface) {
 		bot.SendMessage(otherUser.TelegramID, "👋 طرف مقابل چت را ترک کرد.", bot.GetMainMenuKeyboard(otherIsAdmin))
 	}
 
-	h.CleanupQuizSession(match.ID)
+	// Note: Quiz game sessions are managed separately and cleaned up when games end
 
 	isAdmin := user.TelegramID == h.Config.SuperAdminTgID
 	bot.SendMessage(userID, "👋 چت با موفقیت با طرف مقابل پایان یافت.", bot.GetMainMenuKeyboard(isAdmin))
