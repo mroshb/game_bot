@@ -56,7 +56,7 @@ func (r *GameRepository) GetQuizCategories(count int) ([]string, error) {
 	result := r.db.Model(&models.Question{}).
 		Where("question_type = ?", models.QuestionTypeQuiz).
 		Where("category IS NOT NULL AND category != ''").
-		Distinct("category").
+		Group("category").
 		Order("RANDOM()").
 		Limit(count).
 		Pluck("category", &categories)

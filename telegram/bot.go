@@ -1483,6 +1483,9 @@ func (b *Bot) EditMessageReplyMarkup(chatID int64, messageID int, keyboard inter
 		if k, ok := keyboard.(tgbotapi.InlineKeyboardMarkup); ok {
 			kb = k
 		}
+	} else {
+		// Initialize empty slice to ensure it marshals to [] instead of null
+		kb.InlineKeyboard = make([][]tgbotapi.InlineKeyboardButton, 0)
 	}
 	edit := tgbotapi.NewEditMessageReplyMarkup(chatID, messageID, kb)
 	b.api.Request(edit)
