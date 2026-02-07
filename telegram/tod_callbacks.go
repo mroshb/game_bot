@@ -44,12 +44,13 @@ func (b *Bot) HandleTodCallbacks(query *tgbotapi.CallbackQuery, data string) boo
 
 		case strings.HasPrefix(data, "btn:tod_choice_"):
 			// Format: btn:tod_choice_{gameID}_{choice}
-			if len(parts) >= 5 {
-				gameIDStr := parts[3]
-				choice := parts[4]
+			// After split by '_': ["btn:tod", "choice", "{gameID}", "{choice}"]
+			if len(parts) >= 4 {
+				gameIDStr := parts[2]
+				choice := parts[3]
 				gameID, err := strconv.ParseUint(gameIDStr, 10, 32)
 				if err != nil {
-					logger.Error("Invalid game ID", "data", data)
+					logger.Error("Invalid game ID", "data", data, "error", err)
 					return true
 				}
 				b.handlers.HandleTodChoice(userID, uint(gameID), choice, b)
@@ -81,12 +82,13 @@ func (b *Bot) HandleTodCallbacks(query *tgbotapi.CallbackQuery, data string) boo
 
 		case strings.HasPrefix(data, "btn:tod_judge_"):
 			// Format: btn:tod_judge_{gameID}_{result}
-			if len(parts) >= 5 {
-				gameIDStr := parts[3]
-				result := parts[4]
+			// After split: ["btn:tod", "judge", "{gameID}", "{result}"]
+			if len(parts) >= 4 {
+				gameIDStr := parts[2]
+				result := parts[3]
 				gameID, err := strconv.ParseUint(gameIDStr, 10, 32)
 				if err != nil {
-					logger.Error("Invalid game ID", "data", data)
+					logger.Error("Invalid game ID", "data", data, "error", err)
 					return true
 				}
 				b.handlers.HandleTodJudgment(userID, uint(gameID), result, b)
@@ -107,12 +109,13 @@ func (b *Bot) HandleTodCallbacks(query *tgbotapi.CallbackQuery, data string) boo
 
 		case strings.HasPrefix(data, "btn:tod_use_item_"):
 			// Format: btn:tod_use_item_{gameID}_{itemType}
-			if len(parts) >= 6 {
-				gameIDStr := parts[4]
-				itemType := parts[5]
+			// After split: ["btn:tod", "use", "item", "{gameID}", "{itemType}"]
+			if len(parts) >= 5 {
+				gameIDStr := parts[3]
+				itemType := parts[4]
 				gameID, err := strconv.ParseUint(gameIDStr, 10, 32)
 				if err != nil {
-					logger.Error("Invalid game ID", "data", data)
+					logger.Error("Invalid game ID", "data", data, "error", err)
 					return true
 				}
 				b.handlers.HandleTodItemUse(userID, uint(gameID), itemType, b)
