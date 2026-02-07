@@ -258,7 +258,18 @@ func (h *HandlerManager) HandleQuizPlay(userID int64, matchID uint, bot BotInter
 	nextQ := len(ans) + 1
 
 	if nextQ > models.QuizQuestionsPerRound {
-		bot.SendMessage(userID, "⚠️ شما تمام سؤالات این راند رو پاسخ دادید!", nil)
+		// bot.SendMessage(userID, "⚠️ شما تمام سؤالات این راند رو پاسخ دادید!", nil)
+		// Instead of error, send waiting message
+		msg := "⏳ شما تمام سوالات این راند را پاسخ داده‌اید.\n\nمنتظر حریف باشید تا راند تمام شود..."
+		keyboard := tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🔄 بروزرسانی", fmt.Sprintf("btn:qgame_%d", matchID)),
+			),
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🔙 بازگشت", "btn:quiz_games"),
+			),
+		)
+		bot.SendMessage(userID, msg, keyboard)
 		return
 	}
 

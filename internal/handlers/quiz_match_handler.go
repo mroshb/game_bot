@@ -382,6 +382,17 @@ func (h *HandlerManager) ShowQuizGameDetail(userID int64, matchID uint, bot BotI
 				tgbotapi.NewInlineKeyboardButtonData("🔙 بازگشت", "btn:quiz_games"),
 			),
 		)
+	} else if currentRound != nil && questionsAnswered >= models.QuizQuestionsPerRound {
+		// User finished this round, but round hasn't advanced (waiting for opponent)
+		msg += "\n⏳ منتظر حریف باشید تا راند تمام شود..."
+		keyboard = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🔄 بروزرسانی", fmt.Sprintf("btn:qgame_%d", matchID)),
+			),
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🔙 بازگشت", "btn:quiz_games"),
+			),
+		)
 	} else if currentRound != nil && questionsAnswered < models.QuizQuestionsPerRound {
 		btnText := "🏁 شروع بازی"
 		if questionsAnswered > 0 {

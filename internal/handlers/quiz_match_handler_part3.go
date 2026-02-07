@@ -308,6 +308,18 @@ func (h *HandlerManager) EndQuizRound(matchID uint, bot BotInterface) {
 
 		// Refresh match data to get updated turn and state
 		match, _ = h.QuizMatchRepo.GetQuizMatch(matchID)
+
+		// Send explicit notification to the turn user
+		if match.TurnUserID != nil {
+			var turnUserTgID int64
+			if *match.TurnUserID == match.User1ID {
+				turnUserTgID = match.User1.TelegramID
+			} else {
+				turnUserTgID = match.User2.TelegramID
+			}
+			bot.SendMessage(turnUserTgID, "🔔 نوبت شماست! راند جدید آغاز شد.", nil)
+		}
+
 		h.ShowQuizGameDetail(match.User1.TelegramID, matchID, bot)
 		h.ShowQuizGameDetail(match.User2.TelegramID, matchID, bot)
 	}
