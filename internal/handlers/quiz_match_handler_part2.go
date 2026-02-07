@@ -442,19 +442,8 @@ func (h *HandlerManager) HandleQuizAnswer(userID int64, matchID uint, questionNu
 
 	h.UpdateQuizLights(matchID, user.ID, questionNum, isCorrect, bot)
 
-	// Remove keyboard from the question message
-	session.mu.Lock()
-	var lastMsgID int
-	if match.User1ID == user.ID {
-		lastMsgID = session.User1LastQMsgID
-	} else {
-		lastMsgID = session.User2LastQMsgID
-	}
-	session.mu.Unlock()
-
-	if lastMsgID > 0 {
-		bot.EditMessageReplyMarkup(user.TelegramID, lastMsgID, nil)
-	}
+	// Keyboard is already removed by global handler in bot.go
+	// session.mu.Lock() logic removed as it's unnecessary here
 
 	time.Sleep(1500 * time.Millisecond)
 

@@ -112,19 +112,13 @@ func (h *HandlerManager) HandleBoosterRemove2(userID int64, matchID uint, questi
 	newMsgID := bot.SendMessage(userID, msg, keyboard)
 
 	session.mu.Lock()
-	var oldMsgID int
 	if match.User1ID == user.ID {
-		oldMsgID = session.User1LastQMsgID
 		session.User1LastQMsgID = newMsgID
 	} else {
-		oldMsgID = session.User2LastQMsgID
 		session.User2LastQMsgID = newMsgID
 	}
 	session.mu.Unlock()
-
-	if oldMsgID > 0 {
-		bot.EditMessageReplyMarkup(userID, oldMsgID, nil)
-	}
+	// Keyboard of old message is already removed by global handler in bot.go
 }
 
 func (h *HandlerManager) HandleBoosterRetry(userID int64, matchID uint, questionNum int, bot BotInterface) {
@@ -141,19 +135,10 @@ func (h *HandlerManager) HandleBoosterRetry(userID int64, matchID uint, question
 	session := getQuizGameSession(matchID)
 	h.ensureQuizSessionLoaded(session, match)
 
-	session.mu.Lock()
-	var oldMsgID int
-	if match.User1ID == user.ID {
-		oldMsgID = session.User1LastQMsgID
-	} else {
-		oldMsgID = session.User2LastQMsgID
-	}
-	session.mu.Unlock()
+	// Keyboard is already removed by global handler in bot.go, no need to fetch and edit oldMsgID
 
 	// Remove old keyboard immediately
-	if oldMsgID > 0 {
-		bot.EditMessageReplyMarkup(userID, oldMsgID, nil)
-	}
+	// Keyboard is already removed by global handler in bot.go
 
 	session.mu.Lock()
 
