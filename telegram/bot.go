@@ -866,15 +866,8 @@ func (b *Bot) handleCallbackQuery(query *tgbotapi.CallbackQuery) {
 		return
 	}
 
-	if strings.HasPrefix(data, "btn:") {
-		btnText := strings.TrimPrefix(data, "btn:")
-		// Simulate a message to trigger full message handling (including states)
-		fakeMsg := &tgbotapi.Message{
-			From: query.From,
-			Chat: query.Message.Chat,
-			Text: btnText,
-		}
-		b.handleMessage(fakeMsg)
+	// Quiz game callbacks
+	if b.HandleQuizCallbacks(query, data) {
 		return
 	}
 
@@ -1044,138 +1037,9 @@ func (b *Bot) handleCallbackQuery(query *tgbotapi.CallbackQuery) {
 		return
 	}
 
-	if strings.HasPrefix(data, "qcat_") {
-		var matchID uint
-		var category string
-		// Extract category by finding the second underscore
-		parts := strings.SplitN(data, "_", 3)
-		if len(parts) == 3 {
-			matchID_int, _ := fmt.Sscanf(parts[1], "%d", &matchID)
-			if matchID_int > 0 {
-				category = parts[2]
-				b.handlers.HandleQuizCategorySelection(userID, matchID, category, b)
-			}
-		}
-		return
-	}
-
-	if strings.HasPrefix(data, "qans_") {
-		var matchID uint
-		var qIdx, answerIndex int
-		fmt.Sscanf(data, "qans_%d_%d_%d", &matchID, &qIdx, &answerIndex)
-		b.handlers.HandleQuizAnswer(userID, matchID, qIdx, answerIndex, b)
-		return
-	}
-
-	if strings.HasPrefix(data, "quiz_") {
-		var matchID uint
-		var answerIdx int
-		fmt.Sscanf(data, "quiz_%d_%d", &matchID, &answerIdx)
-		// Fix old quiz callback - assuming current question if unknown, or just ignore
-		b.handlers.HandleQuizAnswer(userID, matchID, 0, answerIdx, b)
-		return
-	}
-
 	// ========================================
 	// NEW QUIZ GAME CALLBACKS
 	// ========================================
-
-	// Show active quiz games (Glass Menu)
-	if data == "quiz_games" {
-		b.handlers.ShowActiveQuizGames(userID, b)
-		return
-	}
-
-	// New quiz game
-	if data == "new_quiz_game" {
-		b.handlers.StartNewQuizGame(userID, b)
-		return
-	}
-
-	// Cancel quiz matchmaking
-	if data == "cancel_quiz_matchmaking" {
-		b.handlers.CancelQuizMatchmaking(userID, b)
-		return
-	}
-
-	// Game detail
-	if strings.HasPrefix(data, "qgame_") {
-		var matchID uint
-		fmt.Sscanf(data, "qgame_%d", &matchID)
-		b.handlers.ShowQuizGameDetail(userID, matchID, b)
-		return
-	}
-
-	// Start round (category selection)
-	if strings.HasPrefix(data, "qstart_") {
-		var matchID uint
-		fmt.Sscanf(data, "qstart_%d", &matchID)
-		b.handlers.ShowCategorySelection(userID, matchID, b)
-		return
-	}
-
-	// Category selection (new format)
-	if strings.HasPrefix(data, "qcat_") {
-		parts := strings.SplitN(data, "_", 3)
-		if len(parts) == 3 {
-			var matchID uint
-			fmt.Sscanf(parts[1], "%d", &matchID)
-			category := parts[2]
-			b.handlers.HandleCategorySelection(userID, matchID, category, b)
-		}
-		return
-	}
-
-	// Booster: Remove 2 options
-	if strings.HasPrefix(data, "qboost_r2_") {
-		var matchID uint
-		var questionNum int
-		fmt.Sscanf(data, "qboost_r2_%d_%d", &matchID, &questionNum)
-		b.handlers.HandleBoosterRemove2(userID, matchID, questionNum, b)
-		return
-	}
-
-	// Booster: Retry
-	if strings.HasPrefix(data, "qboost_rt_") {
-		var matchID uint
-		var questionNum int
-		fmt.Sscanf(data, "qboost_rt_%d_%d", &matchID, &questionNum)
-		b.handlers.HandleBoosterRetry(userID, matchID, questionNum, b)
-		return
-	}
-
-	// Notify opponent
-	if strings.HasPrefix(data, "qnotify_") {
-		var matchID uint
-		fmt.Sscanf(data, "qnotify_%d", &matchID)
-		b.handlers.NotifyQuizOpponent(userID, matchID, b)
-		return
-	}
-
-	// ========================================
-	// END NEW QUIZ GAME CALLBACKS
-	// ========================================
-
-	// Group Truth or Dare callbacks
-	// Quiz of King Callbacks
-	if len(data) > 10 && data[:10] == "qok_start_" {
-		var roomID uint
-		fmt.Sscanf(data, "qok_start_%d", &roomID)
-		b.handlers.StartQuizGame(userID, roomID, b)
-		return
-	}
-
-	if len(data) > 8 && data[:8] == "qok_ans_" {
-		var sessionID, questionID uint
-		var answerIdx int
-		fmt.Sscanf(data, "qok_ans_%d_%d_%d", &sessionID, &questionID, &answerIdx)
-		msgID := 0
-		if query.Message != nil {
-			msgID = query.Message.MessageID
-		}
-		b.handlers.HandleQuizGameAnswer(userID, msgID, sessionID, questionID, answerIdx, b)
-		return
-	}
 
 	if len(data) > 9 && data[:9] == "gt_start_" {
 		var roomID uint
@@ -1397,6 +1261,19 @@ func (b *Bot) handleCallbackQuery(query *tgbotapi.CallbackQuery) {
 		var likedUserID uint
 		fmt.Sscanf(data, "like_%d", &likedUserID)
 		b.handlers.HandleLike(userID, likedUserID, b)
+		return
+	}
+
+	// Fallback: Button Label Emulation
+	if strings.HasPrefix(data, "btn:") {
+		btnText := strings.TrimPrefix(data, "btn:")
+		// Simulate a message to trigger full message handling (including states)
+		fakeMsg := &tgbotapi.Message{
+			From: query.From,
+			Chat: query.Message.Chat,
+			Text: btnText,
+		}
+		b.handleMessage(fakeMsg)
 		return
 	}
 }
