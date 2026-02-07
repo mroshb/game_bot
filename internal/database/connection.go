@@ -53,12 +53,30 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 }
 
 func AutoMigrate(db *gorm.DB) error {
-	logger.Info("Running database migrations...")
+	logger.Info("Starting database migrations...")
+
+	// Save original log level and set to Silent during migration to avoid wall of text
+	// This makes the startup much cleaner and prevents log spam.
+	originalLogger := db.Config.Logger
+	db.Config.Logger = gormlogger.Default.LogMode(gormlogger.Silent)
+	defer func() { db.Config.Logger = originalLogger }()
 
 	// Manually drop phone_hash if it exists (as user requested its removal)
 	if db.Migrator().HasColumn(&models.User{}, "phone_hash") {
-		logger.Info("Dropping phone_hash column from users table...")
-		db.Migrator().DropColumn(&models.User{}, "phone_hash")
+		logger.Info("Maintenance: Dropping phone_hash column from users table...")
+		if err := db.Migrator().DropColumn(&models.User{}, "phone_hash"); err != nil {
+			logger.Warn("Failed to drop phone_hash column", "error", err)
+		}
+	}
+
+	// Manually ensure matchmaking_queue has game_type column with proper default
+	// This prevents GORM from potentially looping on this field if metadata detection glitches
+	if !db.Migrator().HasColumn(&models.MatchmakingQueue{}, "game_type") {
+		logger.Info("Maintenance: Adding game_type column to matchmaking_queue...")
+		if err := db.Exec(`ALTER TABLE matchmaking_queue ADD COLUMN IF NOT EXISTS game_type varchar(20) DEFAULT 'chat'`).Error; err != nil {
+			logger.Warn("Failed to manually add game_type column", "error", err)
+		}
+		db.Exec(`CREATE INDEX IF NOT EXISTS idx_matchmaking_queue_game_type ON matchmaking_queue (game_type)`)
 	}
 
 	err := db.AutoMigrate(
