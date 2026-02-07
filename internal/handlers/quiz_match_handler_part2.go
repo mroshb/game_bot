@@ -194,13 +194,9 @@ func (h *HandlerManager) SendQuizQuestionToUser(matchID uint, userID uint, quest
 	question := session.Questions[questionNum-1]
 
 	if userID == match.User1ID {
-		if session.User1QuestionStart.IsZero() {
-			session.User1QuestionStart = time.Now()
-		}
+		session.User1QuestionStart = time.Now()
 	} else {
-		if session.User2QuestionStart.IsZero() {
-			session.User2QuestionStart = time.Now()
-		}
+		session.User2QuestionStart = time.Now()
 	}
 
 	// Capture start time while locked
@@ -218,7 +214,16 @@ func (h *HandlerManager) SendQuizQuestionToUser(matchID uint, userID uint, quest
 		return
 	}
 
-	h.sendQuestionToUser(user.TelegramID, userID, matchID, questionNum, question, options, bot)
+	var msgID int
+	msgID = h.sendQuestionToUser(user.TelegramID, userID, matchID, questionNum, question, options, bot)
+
+	session.mu.Lock()
+	if userID == match.User1ID {
+		session.User1LastQMsgID = msgID
+	} else {
+		session.User2LastQMsgID = msgID
+	}
+	session.mu.Unlock()
 
 	// Per-user timer
 	go func(mID, uID uint, qNum int, st time.Time) {
@@ -267,11 +272,11 @@ func (h *HandlerManager) HandleQuizPlay(userID int64, matchID uint, bot BotInter
 	h.SendQuizQuestionToUser(matchID, user.ID, nextQ, bot)
 }
 
-func (h *HandlerManager) sendQuestionToUser(userTgID int64, userID, matchID uint, questionNum int, question models.Question, options []string, bot BotInterface) {
+func (h *HandlerManager) sendQuestionToUser(userTgID int64, userID, matchID uint, questionNum int, question models.Question, options []string, bot BotInterface) int {
 	session := getQuizGameSession(matchID)
 	match, _ := h.QuizMatchRepo.GetQuizMatch(matchID)
 	if match == nil {
-		return
+		return 0
 	}
 
 	msg := fmt.Sprintf("❓ سؤال %d از %d\n\n", questionNum, models.QuizQuestionsPerRound)
@@ -321,7 +326,7 @@ func (h *HandlerManager) sendQuestionToUser(userTgID int64, userID, matchID uint
 	}
 
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
-	bot.SendMessage(userTgID, msg, keyboard)
+	return bot.SendMessage(userTgID, msg, keyboard)
 }
 
 // ========================================
@@ -335,7 +340,7 @@ func (h *HandlerManager) HandleQuizAnswer(userID int64, matchID uint, questionNu
 	}
 
 	match, err := h.QuizMatchRepo.GetQuizMatch(matchID)
-	if err != nil {
+	if err != nil || match.State == models.QuizStateRoundFinished || match.State == models.QuizStateGameFinished {
 		return
 	}
 
@@ -395,7 +400,24 @@ func (h *HandlerManager) HandleQuizAnswer(userID int64, matchID uint, questionNu
 		}
 	}
 
-	err = h.QuizMatchRepo.RecordAnswer(matchID, session.RoundID, user.ID, question.ID, questionNum, answerIdx, timeMs, isCorrect, "")
+	boosterUsed := ""
+	session.mu.Lock()
+	if match.User1ID == user.ID {
+		if session.User1UsedRemove2[questionNum] {
+			boosterUsed = models.BoosterRemove2Options
+		} else if session.User1UsedRetry[questionNum] {
+			boosterUsed = models.BoosterSecondChance
+		}
+	} else {
+		if session.User2UsedRemove2[questionNum] {
+			boosterUsed = models.BoosterRemove2Options
+		} else if session.User2UsedRetry[questionNum] {
+			boosterUsed = models.BoosterSecondChance
+		}
+	}
+	session.mu.Unlock()
+
+	err = h.QuizMatchRepo.RecordAnswer(matchID, session.RoundID, user.ID, question.ID, questionNum, answerIdx, timeMs, isCorrect, boosterUsed)
 	if err != nil {
 		logger.Error("Failed to record answer", "error", err)
 		return
@@ -408,6 +430,20 @@ func (h *HandlerManager) HandleQuizAnswer(userID int64, matchID uint, questionNu
 	}
 
 	h.UpdateQuizLights(matchID, user.ID, questionNum, isCorrect, bot)
+
+	// Remove keyboard from the question message
+	session.mu.Lock()
+	var lastMsgID int
+	if match.User1ID == user.ID {
+		lastMsgID = session.User1LastQMsgID
+	} else {
+		lastMsgID = session.User2LastQMsgID
+	}
+	session.mu.Unlock()
+
+	if lastMsgID > 0 {
+		bot.EditMessageReplyMarkup(user.TelegramID, lastMsgID, nil)
+	}
 
 	time.Sleep(1500 * time.Millisecond)
 
@@ -445,7 +481,7 @@ func (h *HandlerManager) HandleQuizAnswer(userID int64, matchID uint, questionNu
 
 func (h *HandlerManager) HandleUserQuestionTimeout(matchID, userID uint, questionNum int, startTime time.Time, bot BotInterface) {
 	match, err := h.QuizMatchRepo.GetQuizMatch(matchID)
-	if err != nil {
+	if err != nil || match.State == models.QuizStateRoundFinished || match.State == models.QuizStateGameFinished {
 		return
 	}
 
@@ -489,9 +525,38 @@ func (h *HandlerManager) HandleUserQuestionTimeout(matchID, userID uint, questio
 	session.mu.Unlock()
 
 	// Record wrong answer for timeout
-	h.QuizMatchRepo.RecordAnswer(matchID, session.RoundID, userID, question.ID, questionNum, -1, models.QuizQuestionTimeSeconds*1000, false, "")
+	boosterUsed := ""
+	session.mu.Lock()
+	if match.User1ID == userID {
+		if session.User1UsedRemove2[questionNum] {
+			boosterUsed = models.BoosterRemove2Options
+		}
+	} else {
+		if session.User2UsedRemove2[questionNum] {
+			boosterUsed = models.BoosterRemove2Options
+		}
+	}
+	session.mu.Unlock()
+
+	h.QuizMatchRepo.RecordAnswer(matchID, session.RoundID, userID, question.ID, questionNum, -1, models.QuizQuestionTimeSeconds*1000, false, boosterUsed)
 	bot.SendMessage(user.TelegramID, "⏰ زمان تمام شد! پاسخ شما: غلط", nil)
 	h.UpdateQuizLights(matchID, userID, questionNum, false, bot)
+
+	// Remove keyboard from the question message
+	if currentStartTime.Equal(startTime) { // Ensure it's the right timer
+		session.mu.Lock()
+		var lastMsgID int
+		if match.User1ID == userID {
+			lastMsgID = session.User1LastQMsgID
+		} else {
+			lastMsgID = session.User2LastQMsgID
+		}
+		session.mu.Unlock()
+
+		if lastMsgID > 0 {
+			bot.EditMessageReplyMarkup(user.TelegramID, lastMsgID, nil)
+		}
+	}
 
 	time.Sleep(1500 * time.Millisecond)
 
@@ -528,7 +593,7 @@ func (h *HandlerManager) HandleUserQuestionTimeout(matchID, userID uint, questio
 
 func (h *HandlerManager) UpdateQuizLights(matchID, userID uint, questionNum int, isCorrect bool, bot BotInterface) {
 	match, _ := h.QuizMatchRepo.GetQuizMatch(matchID)
-	if match == nil {
+	if match == nil || match.State == models.QuizStateGameFinished {
 		return
 	}
 

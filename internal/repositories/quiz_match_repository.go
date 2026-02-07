@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/mroshb/game_bot/internal/models"
@@ -127,6 +128,22 @@ func (r *QuizMatchRepository) UpdateQuizMatchState(matchID uint, state string) e
 	return nil
 }
 
+// UpdateQuizMatchStateAtomic updates the state only if current state matches one of the expected ones
+func (r *QuizMatchRepository) UpdateQuizMatchStateAtomic(matchID uint, expectedStates []string, newState string) (bool, error) {
+	result := r.db.Model(&models.QuizMatch{}).
+		Where("id = ? AND state IN ?", matchID, expectedStates).
+		Updates(map[string]interface{}{
+			"state":            newState,
+			"last_activity_at": time.Now(),
+		})
+
+	if result.Error != nil {
+		return false, errors.Wrap(result.Error, errors.ErrCodeInternalError, "failed to update quiz match state atomically")
+	}
+
+	return result.RowsAffected > 0, nil
+}
+
 // UpdateLastActivity updates the last activity timestamp
 func (r *QuizMatchRepository) UpdateLastActivity(matchID uint) error {
 	result := r.db.Model(&models.QuizMatch{}).
@@ -181,7 +198,14 @@ func (r *QuizMatchRepository) UpdateLightsMessageID(matchID, userID uint, messag
 }
 
 // CreateQuizRound creates a new round in a quiz match
+// CreateQuizRound creates a new round in a quiz match
 func (r *QuizMatchRepository) CreateQuizRound(matchID uint, roundNum int, category string, chosenBy uint, questionIDs string) (*models.QuizRound, error) {
+	// Check if round already exists to prevent duplicates via race conditions
+	var existingRound models.QuizRound
+	if err := r.db.Where("match_id = ? AND round_number = ?", matchID, roundNum).First(&existingRound).Error; err == nil {
+		return &existingRound, nil
+	}
+
 	round := &models.QuizRound{
 		MatchID:        matchID,
 		RoundNumber:    roundNum,
@@ -191,6 +215,13 @@ func (r *QuizMatchRepository) CreateQuizRound(matchID uint, roundNum int, catego
 	}
 
 	if err := r.db.Create(round).Error; err != nil {
+		// one last check for race condition
+		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
+			var rnd models.QuizRound
+			if e := r.db.Where("match_id = ? AND round_number = ?", matchID, roundNum).First(&rnd).Error; e == nil {
+				return &rnd, nil
+			}
+		}
 		return nil, errors.Wrap(err, errors.ErrCodeInternalError, "failed to create quiz round")
 	}
 

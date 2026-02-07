@@ -28,6 +28,9 @@ type QuizGameSession struct {
 	User1UsedRetry   map[int]bool
 	User2UsedRetry   map[int]bool
 
+	User1LastQMsgID int
+	User2LastQMsgID int
+
 	CategoryTimer *time.Timer
 	QuestionTimer *time.Timer
 

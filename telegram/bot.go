@@ -1478,10 +1478,14 @@ func (b *Bot) Stop() {
 	logger.Info("Bot stopped receiving updates")
 }
 func (b *Bot) EditMessageReplyMarkup(chatID int64, messageID int, keyboard interface{}) {
-	if kb, ok := keyboard.(tgbotapi.InlineKeyboardMarkup); ok {
-		edit := tgbotapi.NewEditMessageReplyMarkup(chatID, messageID, kb)
-		b.api.Request(edit)
+	var kb tgbotapi.InlineKeyboardMarkup
+	if keyboard != nil {
+		if k, ok := keyboard.(tgbotapi.InlineKeyboardMarkup); ok {
+			kb = k
+		}
 	}
+	edit := tgbotapi.NewEditMessageReplyMarkup(chatID, messageID, kb)
+	b.api.Request(edit)
 }
 
 func (b *Bot) SendPhoto(chatID int64, photoID string, caption string, keyboard interface{}) int {

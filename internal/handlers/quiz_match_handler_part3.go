@@ -23,7 +23,7 @@ func (h *HandlerManager) HandleBoosterRemove2(userID int64, matchID uint, questi
 	}
 
 	match, _ := h.QuizMatchRepo.GetQuizMatch(matchID)
-	if match == nil {
+	if match == nil || match.State == models.QuizStateRoundFinished || match.State == models.QuizStateGameFinished {
 		return
 	}
 
@@ -33,15 +33,24 @@ func (h *HandlerManager) HandleBoosterRemove2(userID int64, matchID uint, questi
 	session.mu.Lock()
 
 	usedBefore := false
+	alreadyAnswered := false
 	if match.User1ID == user.ID {
 		usedBefore = session.User1UsedRemove2[questionNum]
+		alreadyAnswered = session.User1AnsweredQ[questionNum]
 	} else {
 		usedBefore = session.User2UsedRemove2[questionNum]
+		alreadyAnswered = session.User2AnsweredQ[questionNum]
 	}
 
 	if usedBefore {
 		session.mu.Unlock()
-		bot.SendMessage(userID, "⚠️ شما قبلاً از این بوستر استفاده کردهاید!", nil)
+		bot.SendMessage(userID, "⚠️ شما قبلاً از این بوستر استفاده کرده‌اید!", nil)
+		return
+	}
+
+	if alreadyAnswered {
+		session.mu.Unlock()
+		bot.SendMessage(userID, "⚠️ شما قبلاً به این سوال پاسخ داده‌اید!", nil)
 		return
 	}
 
@@ -100,7 +109,22 @@ func (h *HandlerManager) HandleBoosterRemove2(userID int64, matchID uint, questi
 	}
 
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
-	bot.SendMessage(userID, msg, keyboard)
+	newMsgID := bot.SendMessage(userID, msg, keyboard)
+
+	session.mu.Lock()
+	var oldMsgID int
+	if match.User1ID == user.ID {
+		oldMsgID = session.User1LastQMsgID
+		session.User1LastQMsgID = newMsgID
+	} else {
+		oldMsgID = session.User2LastQMsgID
+		session.User2LastQMsgID = newMsgID
+	}
+	session.mu.Unlock()
+
+	if oldMsgID > 0 {
+		bot.EditMessageReplyMarkup(userID, oldMsgID, nil)
+	}
 }
 
 func (h *HandlerManager) HandleBoosterRetry(userID int64, matchID uint, questionNum int, bot BotInterface) {
@@ -110,7 +134,7 @@ func (h *HandlerManager) HandleBoosterRetry(userID int64, matchID uint, question
 	}
 
 	match, _ := h.QuizMatchRepo.GetQuizMatch(matchID)
-	if match == nil {
+	if match == nil || match.State == models.QuizStateRoundFinished || match.State == models.QuizStateGameFinished {
 		return
 	}
 
@@ -118,17 +142,40 @@ func (h *HandlerManager) HandleBoosterRetry(userID int64, matchID uint, question
 	h.ensureQuizSessionLoaded(session, match)
 
 	session.mu.Lock()
+	var oldMsgID int
+	if match.User1ID == user.ID {
+		oldMsgID = session.User1LastQMsgID
+	} else {
+		oldMsgID = session.User2LastQMsgID
+	}
+	session.mu.Unlock()
+
+	// Remove old keyboard immediately
+	if oldMsgID > 0 {
+		bot.EditMessageReplyMarkup(userID, oldMsgID, nil)
+	}
+
+	session.mu.Lock()
 
 	usedBefore := false
+	alreadyAnswered := false
 	if match.User1ID == user.ID {
 		usedBefore = session.User1UsedRetry[questionNum]
+		alreadyAnswered = session.User1AnsweredQ[questionNum]
 	} else {
 		usedBefore = session.User2UsedRetry[questionNum]
+		alreadyAnswered = session.User2AnsweredQ[questionNum]
 	}
 
 	if usedBefore {
 		session.mu.Unlock()
-		bot.SendMessage(userID, "⚠️ شما قبلاً از این بوستر استفاده کردهاید!", nil)
+		bot.SendMessage(userID, "⚠️ شما قبلاً از این بوستر استفاده کرده‌اید!", nil)
+		return
+	}
+
+	if !alreadyAnswered {
+		session.mu.Unlock()
+		bot.SendMessage(userID, "⚠️ شما هنوز به این سوال پاسخ نداده‌اید!", nil)
 		return
 	}
 
@@ -159,6 +206,9 @@ func (h *HandlerManager) HandleBoosterRetry(userID int64, matchID uint, question
 	// Delete previous answer from DB so a new one can be recorded
 	h.QuizMatchRepo.DeleteUserAnswer(matchID, session.RoundID, user.ID, questionNum)
 
+	// Update lights to show white again
+	h.UpdateQuizLights(matchID, user.ID, questionNum, false, bot)
+
 	bot.SendMessage(userID, "🛡 بوستر فعال شد! میتونی دوباره جواب بدی!", nil)
 
 	time.Sleep(1 * time.Second)
@@ -171,13 +221,23 @@ func (h *HandlerManager) HandleBoosterRetry(userID int64, matchID uint, question
 // ========================================
 
 func (h *HandlerManager) EndQuizRound(matchID uint, bot BotInterface) {
-	match, err := h.QuizMatchRepo.GetQuizMatch(matchID)
-	if err != nil || match.State == models.QuizStateRoundFinished || match.State == models.QuizStateGameFinished {
+	// Set state to round_finished immediately to prevent concurrent executions
+	success, _ := h.QuizMatchRepo.UpdateQuizMatchStateAtomic(matchID, []string{
+		models.QuizStateWaitingCategory,
+		models.QuizStatePlayingQ1,
+		models.QuizStatePlayingQ2,
+		models.QuizStatePlayingQ3,
+		models.QuizStatePlayingQ4,
+	}, models.QuizStateRoundFinished)
+
+	if !success {
 		return
 	}
 
-	// Set state to round_finished immediately to prevent concurrent executions
-	h.QuizMatchRepo.UpdateQuizMatchState(matchID, models.QuizStateRoundFinished)
+	match, err := h.QuizMatchRepo.GetQuizMatch(matchID)
+	if err != nil {
+		return
+	}
 
 	session := getQuizGameSession(matchID)
 
@@ -344,6 +404,25 @@ func (h *HandlerManager) EndQuizGame(matchID uint, bot BotInterface) {
 	bot.SendMessage(match.User2.TelegramID, msg2, keyboard)
 
 	cleanupQuizGameSession(matchID)
+
+	// Set status back to online if no other active games
+	h.updateQuizPlayerStatus(match.User1ID)
+	h.updateQuizPlayerStatus(match.User2ID)
+}
+
+func (h *HandlerManager) updateQuizPlayerStatus(userID uint) {
+	// Don't change searching status
+	user, err := h.UserRepo.GetUserByID(userID)
+	if err != nil || user == nil || user.Status == models.UserStatusSearching || user.Status == models.UserStatusOnline {
+		return
+	}
+
+	activeQuiz, _ := h.QuizMatchRepo.GetAllActiveQuizMatchesByUser(userID)
+	activeTod, _ := h.TodRepo.GetActiveGameForUser(userID)
+
+	if len(activeQuiz) == 0 && activeTod == nil {
+		h.UserRepo.UpdateUserStatus(userID, models.UserStatusOnline)
+	}
 }
 
 // ========================================
@@ -363,12 +442,24 @@ func (h *HandlerManager) CheckQuizTimeouts(bot BotInterface) {
 }
 
 func (h *HandlerManager) HandleQuizTimeout(matchID uint, bot BotInterface) {
+	// Atomic check and update to timeout state
+	success, _ := h.QuizMatchRepo.UpdateQuizMatchStateAtomic(matchID, []string{
+		models.QuizStateWaitingCategory,
+		models.QuizStatePlayingQ1,
+		models.QuizStatePlayingQ2,
+		models.QuizStatePlayingQ3,
+		models.QuizStatePlayingQ4,
+		models.QuizStateRoundFinished,
+	}, models.QuizStateTimeout)
+
+	if !success {
+		return
+	}
+
 	match, err := h.QuizMatchRepo.GetQuizMatch(matchID)
 	if err != nil {
 		return
 	}
-
-	h.QuizMatchRepo.TimeoutQuizMatch(matchID)
 
 	var inactiveName string
 	if match.TurnUserID != nil {
@@ -387,6 +478,10 @@ func (h *HandlerManager) HandleQuizTimeout(matchID uint, bot BotInterface) {
 	bot.SendMessage(match.User2.TelegramID, msg, nil)
 
 	cleanupQuizGameSession(matchID)
+
+	// Set status back to online if no other active games
+	h.updateQuizPlayerStatus(match.User1ID)
+	h.updateQuizPlayerStatus(match.User2ID)
 
 	logger.Info("Quiz match timed out", "match_id", matchID)
 }
