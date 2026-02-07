@@ -12,6 +12,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/mroshb/game_bot/internal/models"
 	"github.com/mroshb/game_bot/pkg/logger"
+	"github.com/mroshb/game_bot/pkg/utils"
 )
 
 // ========================================
@@ -34,12 +35,15 @@ func (h *HandlerManager) ShowCategorySelection(userID int64, matchID uint, bot B
 		return
 	}
 
-	categories := []string{"اطلاعات عمومی", "تاریخ", "فوتبال", "تکنولوژی", "جغرافیا", "بازی های ویدیویی", "مذهبی", "زبان انگلیسی", "ریاضی"}
-	rand.Seed(time.Now().UnixNano())
-	rand.Shuffle(len(categories), func(i, j int) {
-		categories[i], categories[j] = categories[j], categories[i]
-	})
-	selectedCats := categories[:3]
+	selectedCats, err := h.GameRepo.GetQuizCategories(3)
+	if err != nil || len(selectedCats) < 3 {
+		categories := []string{"اطلاعات عمومی", "تاریخ", "فوتبال", "تکنولوژی", "جغرافیا", "بازی های ویدیویی", "مذهبی", "زبان انگلیسی", "ریاضی"}
+		rand.Seed(time.Now().UnixNano())
+		rand.Shuffle(len(categories), func(i, j int) {
+			categories[i], categories[j] = categories[j], categories[i]
+		})
+		selectedCats = categories[:3]
+	}
 
 	var rows [][]tgbotapi.InlineKeyboardButton
 	for _, cat := range selectedCats {
@@ -87,8 +91,32 @@ func (h *HandlerManager) HandleCategorySelection(userID int64, matchID uint, cat
 	}
 	session.mu.Unlock()
 
-	questions, err := h.GameRepo.GetQuestionsByCategory(category, models.QuizQuestionsPerRound)
+	category = utils.NormalizePersianText(category)
+
+	// Get already used question IDs to avoid repeats
+	var excludeIDs []uint
+	allRounds, _ := h.QuizMatchRepo.GetAllQuizRounds(matchID)
+	for _, r := range allRounds {
+		if r.QuestionIDs != "" {
+			ids := strings.Split(r.QuestionIDs, ",")
+			for _, idStr := range ids {
+				var id uint
+				fmt.Sscanf(idStr, "%d", &id)
+				if id > 0 {
+					excludeIDs = append(excludeIDs, id)
+				}
+			}
+		}
+	}
+
+	questions, err := h.GameRepo.GetQuestionsByCategoryExcluding(category, models.QuizQuestionsPerRound, excludeIDs)
 	if err != nil || len(questions) < models.QuizQuestionsPerRound {
+		// Fallback: Get ANY quiz questions excluding used ones
+		questions, _ = h.GameRepo.GetQuestionsByCategoryExcluding("", models.QuizQuestionsPerRound, excludeIDs)
+	}
+
+	if len(questions) < models.QuizQuestionsPerRound {
+		// Absolute fallback: Just get any questions even if repeats
 		questions, _ = h.GameRepo.GetQuizQuestions(models.QuizQuestionsPerRound)
 	}
 
@@ -156,25 +184,9 @@ func (h *HandlerManager) SendQuizQuestionToUser(matchID uint, userID uint, quest
 	}
 
 	session := getQuizGameSession(matchID)
+	h.ensureQuizSessionLoaded(session, match)
+
 	session.mu.Lock()
-
-	// If session questions are empty (e.g. after restart), reload them from DB
-	if len(session.Questions) == 0 {
-		round, _ := h.QuizMatchRepo.GetQuizRound(matchID, match.CurrentRound)
-		if round != nil && round.QuestionIDs != "" {
-			ids := strings.Split(round.QuestionIDs, ",")
-			for _, idStr := range ids {
-				var id uint
-				fmt.Sscanf(idStr, "%d", &id)
-				q, _ := h.GameRepo.GetQuestionByID(id)
-				if q != nil {
-					session.Questions = append(session.Questions, *q)
-				}
-			}
-			session.RoundID = round.ID
-		}
-	}
-
 	if questionNum > len(session.Questions) {
 		session.mu.Unlock()
 		return
@@ -182,9 +194,21 @@ func (h *HandlerManager) SendQuizQuestionToUser(matchID uint, userID uint, quest
 	question := session.Questions[questionNum-1]
 
 	if userID == match.User1ID {
-		session.User1QuestionStart = time.Now()
+		if session.User1QuestionStart.IsZero() {
+			session.User1QuestionStart = time.Now()
+		}
 	} else {
-		session.User2QuestionStart = time.Now()
+		if session.User2QuestionStart.IsZero() {
+			session.User2QuestionStart = time.Now()
+		}
+	}
+
+	// Capture start time while locked
+	var startTime time.Time
+	if userID == match.User1ID {
+		startTime = session.User1QuestionStart
+	} else {
+		startTime = session.User2QuestionStart
 	}
 	session.mu.Unlock()
 
@@ -197,10 +221,10 @@ func (h *HandlerManager) SendQuizQuestionToUser(matchID uint, userID uint, quest
 	h.sendQuestionToUser(user.TelegramID, userID, matchID, questionNum, question, options, bot)
 
 	// Per-user timer
-	go func(mID, uID uint, qNum int) {
+	go func(mID, uID uint, qNum int, st time.Time) {
 		time.Sleep(time.Duration(models.QuizQuestionTimeSeconds) * time.Second)
-		h.HandleUserQuestionTimeout(mID, uID, qNum, bot)
-	}(matchID, userID, questionNum)
+		h.HandleUserQuestionTimeout(mID, uID, qNum, st, bot)
+	}(matchID, userID, questionNum, startTime)
 }
 
 // ========================================
@@ -316,8 +340,9 @@ func (h *HandlerManager) HandleQuizAnswer(userID int64, matchID uint, questionNu
 	}
 
 	session := getQuizGameSession(matchID)
-	session.mu.Lock()
+	h.ensureQuizSessionLoaded(session, match)
 
+	session.mu.Lock()
 	alreadyAnswered := false
 	if match.User1ID == user.ID {
 		alreadyAnswered = session.User1AnsweredQ[questionNum]
@@ -327,7 +352,6 @@ func (h *HandlerManager) HandleQuizAnswer(userID int64, matchID uint, questionNu
 
 	if alreadyAnswered {
 		session.mu.Unlock()
-		// Silently ignore if already answered (might be a double click)
 		return
 	}
 
@@ -339,8 +363,14 @@ func (h *HandlerManager) HandleQuizAnswer(userID int64, matchID uint, questionNu
 
 	var timeTaken time.Duration
 	if match.User1ID == user.ID {
+		if session.User1QuestionStart.IsZero() {
+			session.User1QuestionStart = time.Now().Add(-5 * time.Second) // Default 5s if restarted
+		}
 		timeTaken = time.Since(session.User1QuestionStart)
 	} else {
+		if session.User2QuestionStart.IsZero() {
+			session.User2QuestionStart = time.Now().Add(-5 * time.Second) // Default 5s if restarted
+		}
 		timeTaken = time.Since(session.User2QuestionStart)
 	}
 	timeMs := int(timeTaken.Milliseconds())
@@ -413,7 +443,7 @@ func (h *HandlerManager) HandleQuizAnswer(userID int64, matchID uint, questionNu
 // HANDLE QUESTION TIMEOUT
 // ========================================
 
-func (h *HandlerManager) HandleUserQuestionTimeout(matchID, userID uint, questionNum int, bot BotInterface) {
+func (h *HandlerManager) HandleUserQuestionTimeout(matchID, userID uint, questionNum int, startTime time.Time, bot BotInterface) {
 	match, err := h.QuizMatchRepo.GetQuizMatch(matchID)
 	if err != nil {
 		return
@@ -425,16 +455,22 @@ func (h *HandlerManager) HandleUserQuestionTimeout(matchID, userID uint, questio
 	}
 
 	session := getQuizGameSession(matchID)
+	h.ensureQuizSessionLoaded(session, match)
+
 	session.mu.Lock()
 
 	alreadyAnswered := false
+	var currentStartTime time.Time
 	if match.User1ID == userID {
 		alreadyAnswered = session.User1AnsweredQ[questionNum]
+		currentStartTime = session.User1QuestionStart
 	} else {
 		alreadyAnswered = session.User2AnsweredQ[questionNum]
+		currentStartTime = session.User2QuestionStart
 	}
 
-	if alreadyAnswered {
+	// Validate timer: skip if already answered OR if this is an old timer (StartTime has changed)
+	if alreadyAnswered || (!startTime.IsZero() && !startTime.Equal(currentStartTime)) {
 		session.mu.Unlock()
 		return
 	}

@@ -10,3 +10,13 @@ func NormalizePersianNumbers(input string) string {
 	)
 	return replacer.Replace(input)
 }
+
+// NormalizePersianText handles Arabic/Farsi character variants
+func NormalizePersianText(input string) string {
+	replacer := strings.NewReplacer(
+		"ي", "ی", // Arabic Yeh to Farsi Yeh
+		"ك", "ک", // Arabic Kaf to Farsi Kaf
+		"ة", "ه", // Teh Marbuta to Heh
+	)
+	return strings.TrimSpace(replacer.Replace(input))
+}

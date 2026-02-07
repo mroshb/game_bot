@@ -269,6 +269,13 @@ func (r *QuizMatchRepository) RecordAnswer(matchID, roundID, userID, questionID 
 	})
 }
 
+// DeleteUserAnswer deletes a specific answer (used for Retry booster)
+func (r *QuizMatchRepository) DeleteUserAnswer(matchID, roundID, userID uint, questionNum int) error {
+	result := r.db.Where("match_id = ? AND round_id = ? AND user_id = ? AND question_number = ?",
+		matchID, roundID, userID, questionNum).Delete(&models.QuizAnswer{})
+	return result.Error
+}
+
 // GetUserAnswers retrieves all answers for a user in a round
 func (r *QuizMatchRepository) GetUserAnswers(matchID, roundID, userID uint) ([]models.QuizAnswer, error) {
 	var answers []models.QuizAnswer

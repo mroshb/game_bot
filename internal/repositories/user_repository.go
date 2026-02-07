@@ -397,6 +397,21 @@ func (r *UserRepository) MarkInactiveUsersOffline(timeout time.Duration) (int64,
 	return result.RowsAffected, result.Error
 }
 
+// AddXP adds experience points to a user and handles leveling up
+func (r *UserRepository) AddXP(userID uint, xp int) error {
+	result := r.db.Model(&models.User{}).
+		Where("id = ?", userID).
+		Update("xp", gorm.Expr("xp + ?", xp))
+
+	if result.Error != nil {
+		return errors.Wrap(result.Error, errors.ErrCodeInternalError, "failed to add XP")
+	}
+
+	// Simple leveling: level = floor(sqrt(xp/100)) + 1 or similar
+	// For now just update XP. Leveling logic can be added later or triggered here.
+	return nil
+}
+
 // GetReferralCount returns the number of users referred by a specific user
 func (r *UserRepository) GetReferralCount(userID uint) (int64, error) {
 	var count int64

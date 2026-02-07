@@ -16,14 +16,6 @@ func (h *HandlerManager) StartQuizMatchmaking(userID int64, bot BotInterface) {
 		return
 	}
 
-	// Check if user already has an active quiz match
-	activeMatch, _ := h.QuizMatchRepo.GetActiveQuizMatchByUser(user.ID)
-	if activeMatch != nil {
-		bot.SendMessage(userID, "⚠️ شما یک بازی فعال دارید! ابتدا آن را تمام کنید.", nil)
-		h.ShowQuizGameDetail(userID, activeMatch.ID, bot)
-		return
-	}
-
 	// Check if user is already in matchmaking queue
 	inQueue, _ := h.MatchRepo.IsUserInQueue(user.ID)
 	if inQueue {

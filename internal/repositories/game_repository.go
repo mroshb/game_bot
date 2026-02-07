@@ -70,11 +70,20 @@ func (r *GameRepository) GetQuizCategories(count int) ([]string, error) {
 
 // GetQuestionsByCategory retrieves random questions from a specific category
 func (r *GameRepository) GetQuestionsByCategory(category string, count int) ([]models.Question, error) {
+	return r.GetQuestionsByCategoryExcluding(category, count, nil)
+}
+
+// GetQuestionsByCategoryExcluding retrieves random questions excluding some IDs
+func (r *GameRepository) GetQuestionsByCategoryExcluding(category string, count int, excludeIDs []uint) ([]models.Question, error) {
 	var questions []models.Question
-	result := r.db.Where("question_type = ? AND category = ?", models.QuestionTypeQuiz, category).
-		Order("RANDOM()").
-		Limit(count).
-		Find(&questions)
+	query := r.db.Where("question_type = ?", models.QuestionTypeQuiz)
+	if category != "" {
+		query = query.Where("category = ?", category)
+	}
+	if len(excludeIDs) > 0 {
+		query = query.Where("id NOT IN ?", excludeIDs)
+	}
+	result := query.Order("RANDOM()").Limit(count).Find(&questions)
 
 	if result.Error != nil {
 		return nil, errors.Wrap(result.Error, errors.ErrCodeInternalError, "failed to get questions by category")
@@ -286,6 +295,30 @@ func (r *GameRepository) GetQuestionByID(id uint) (*models.Question, error) {
 		return nil, result.Error
 	}
 	return &question, nil
+}
+
+// GetQuestionsByIDs retrieves multiple questions by their IDs
+func (r *GameRepository) GetQuestionsByIDs(ids []uint) ([]models.Question, error) {
+	var questions []models.Question
+	result := r.db.Where("id IN ?", ids).Find(&questions)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	// Sort them back to the original order of IDs
+	idMap := make(map[uint]models.Question)
+	for _, q := range questions {
+		idMap[q.ID] = q
+	}
+
+	var sortedQuestions []models.Question
+	for _, id := range ids {
+		if q, ok := idMap[id]; ok {
+			sortedQuestions = append(sortedQuestions, q)
+		}
+	}
+
+	return sortedQuestions, nil
 }
 
 // GetRecentGames retrieves recent games user participated in

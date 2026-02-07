@@ -28,6 +28,8 @@ func (h *HandlerManager) HandleBoosterRemove2(userID int64, matchID uint, questi
 	}
 
 	session := getQuizGameSession(matchID)
+	h.ensureQuizSessionLoaded(session, match)
+
 	session.mu.Lock()
 
 	usedBefore := false
@@ -113,6 +115,8 @@ func (h *HandlerManager) HandleBoosterRetry(userID int64, matchID uint, question
 	}
 
 	session := getQuizGameSession(matchID)
+	h.ensureQuizSessionLoaded(session, match)
+
 	session.mu.Lock()
 
 	usedBefore := false
@@ -144,11 +148,16 @@ func (h *HandlerManager) HandleBoosterRetry(userID int64, matchID uint, question
 	if match.User1ID == user.ID {
 		session.User1UsedRetry[questionNum] = true
 		session.User1AnsweredQ[questionNum] = false
+		session.User1QuestionStart = time.Time{} // Reset timer
 	} else {
 		session.User2UsedRetry[questionNum] = true
 		session.User2AnsweredQ[questionNum] = false
+		session.User2QuestionStart = time.Time{} // Reset timer
 	}
 	session.mu.Unlock()
+
+	// Delete previous answer from DB so a new one can be recorded
+	h.QuizMatchRepo.DeleteUserAnswer(matchID, session.RoundID, user.ID, questionNum)
 
 	bot.SendMessage(userID, "🛡 بوستر فعال شد! میتونی دوباره جواب بدی!", nil)
 
@@ -163,9 +172,12 @@ func (h *HandlerManager) HandleBoosterRetry(userID int64, matchID uint, question
 
 func (h *HandlerManager) EndQuizRound(matchID uint, bot BotInterface) {
 	match, err := h.QuizMatchRepo.GetQuizMatch(matchID)
-	if err != nil {
+	if err != nil || match.State == models.QuizStateRoundFinished || match.State == models.QuizStateGameFinished {
 		return
 	}
+
+	// Set state to round_finished immediately to prevent concurrent executions
+	h.QuizMatchRepo.UpdateQuizMatchState(matchID, models.QuizStateRoundFinished)
 
 	session := getQuizGameSession(matchID)
 
@@ -266,12 +278,20 @@ func (h *HandlerManager) EndQuizGame(matchID uint, bot BotInterface) {
 	}
 
 	if winnerID > 0 {
+		loserID := match.User1ID
+		if winnerID == match.User1ID {
+			loserID = match.User2ID
+		}
 		h.QuizMatchRepo.FinishQuizMatch(matchID, winnerID)
 		h.CoinRepo.AddCoins(winnerID, int64(models.QuizWinRewardCoins), "quiz_win", "Quiz game win reward")
+		h.UserRepo.AddXP(winnerID, models.QuizWinRewardXP)
+		h.UserRepo.AddXP(loserID, models.QuizLoseRewardXP)
 	} else {
 		h.QuizMatchRepo.FinishQuizMatch(matchID, 0)
 		h.CoinRepo.AddCoins(match.User1ID, int64(models.QuizDrawRewardCoins), "quiz_draw", "Quiz game draw reward")
 		h.CoinRepo.AddCoins(match.User2ID, int64(models.QuizDrawRewardCoins), "quiz_draw", "Quiz game draw reward")
+		h.UserRepo.AddXP(match.User1ID, models.QuizDrawRewardXP)
+		h.UserRepo.AddXP(match.User2ID, models.QuizDrawRewardXP)
 	}
 
 	msg1 := "🎮 بازی تمام شد!\n\n"
@@ -282,12 +302,13 @@ func (h *HandlerManager) EndQuizGame(matchID uint, bot BotInterface) {
 	switch winnerID {
 	case match.User1ID:
 		msg1 += "🏆 شما برنده شدید!\n\n"
-		msg1 += fmt.Sprintf("💰 پاداش: +%d سکه", models.QuizWinRewardCoins)
+		msg1 += fmt.Sprintf("💰 پاداش: +%d سکه | ⭐ +%d امتیاز تجربه", models.QuizWinRewardCoins, models.QuizWinRewardXP)
 	case match.User2ID:
-		msg1 += "❌ شما باختید!"
+		msg1 += "❌ شما باختید!\n\n"
+		msg1 += fmt.Sprintf("⭐ پاداش تلاش: +%d امتیاز تجربه", models.QuizLoseRewardXP)
 	default:
 		msg1 += "🤝 مساوی!\n\n"
-		msg1 += fmt.Sprintf("💰 پاداش: +%d سکه", models.QuizDrawRewardCoins)
+		msg1 += fmt.Sprintf("💰 پاداش: +%d سکه | ⭐ +%d امتیاز تجربه", models.QuizDrawRewardCoins, models.QuizDrawRewardXP)
 	}
 
 	msg2 := "🎮 بازی تمام شد!\n\n"
@@ -298,12 +319,13 @@ func (h *HandlerManager) EndQuizGame(matchID uint, bot BotInterface) {
 	switch winnerID {
 	case match.User2ID:
 		msg2 += "🏆 شما برنده شدید!\n\n"
-		msg2 += fmt.Sprintf("💰 پاداش: +%d سکه", models.QuizWinRewardCoins)
+		msg2 += fmt.Sprintf("💰 پاداش: +%d سکه | ⭐ +%d امتیاز تجربه", models.QuizWinRewardCoins, models.QuizWinRewardXP)
 	case match.User1ID:
-		msg2 += "❌ شما باختید!"
+		msg2 += "❌ شما باختید!\n\n"
+		msg2 += fmt.Sprintf("⭐ پاداش تلاش: +%d امتیاز تجربه", models.QuizLoseRewardXP)
 	default:
 		msg2 += "🤝 مساوی!\n\n"
-		msg2 += fmt.Sprintf("💰 پاداش: +%d سکه", models.QuizDrawRewardCoins)
+		msg2 += fmt.Sprintf("💰 پاداش: +%d سکه | ⭐ +%d امتیاز تجربه", models.QuizDrawRewardCoins, models.QuizDrawRewardXP)
 	}
 
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(

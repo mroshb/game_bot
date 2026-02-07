@@ -77,6 +77,48 @@ func cleanupQuizGameSession(matchID uint) {
 	quizGameSessionsMu.Unlock()
 }
 
+func (h *HandlerManager) ensureQuizSessionLoaded(session *QuizGameSession, match *models.QuizMatch) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	if len(session.Questions) > 0 {
+		return
+	}
+
+	round, _ := h.QuizMatchRepo.GetQuizRound(match.ID, match.CurrentRound)
+	if round == nil || round.QuestionIDs == "" {
+		return
+	}
+
+	idStrings := strings.Split(round.QuestionIDs, ",")
+	var ids []uint
+	for _, idStr := range idStrings {
+		var id uint
+		fmt.Sscanf(idStr, "%d", &id)
+		if id > 0 {
+			ids = append(ids, id)
+		}
+	}
+
+	questions, err := h.GameRepo.GetQuestionsByIDs(ids)
+	if err != nil {
+		return
+	}
+
+	session.Questions = questions
+	session.RoundID = round.ID
+
+	// Sync answer state from DB
+	ans1, _ := h.QuizMatchRepo.GetUserAnswers(match.ID, round.ID, match.User1ID)
+	for _, a := range ans1 {
+		session.User1AnsweredQ[a.QuestionNumber] = true
+	}
+	ans2, _ := h.QuizMatchRepo.GetUserAnswers(match.ID, round.ID, match.User2ID)
+	for _, a := range ans2 {
+		session.User2AnsweredQ[a.QuestionNumber] = true
+	}
+}
+
 // ========================================
 // GLASS MENU - Show Active Games
 // ========================================
