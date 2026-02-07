@@ -426,6 +426,27 @@ func (h *HandlerManager) StartTodGameWithMatch(userID int64, matchID uint, bot B
 	// Check if ToD game already exists
 	existingGame, _ := h.TodRepo.GetGameByMatchID(matchID)
 	if existingGame != nil {
+		// Check for terminal states - if match is active but game is done, close the match
+		if existingGame.State == models.TodStateForfeit || existingGame.State == models.TodStateGameEnd {
+			logger.Warn("Found active match with finished game", "match_id", matchID, "game_id", existingGame.ID, "state", existingGame.State)
+
+			// Close the inconsistency
+			h.MatchRepo.EndMatch(matchID)
+
+			// Update both users status
+			h.UserRepo.UpdateUserStatus(match.User1ID, models.UserStatusOnline)
+			h.UserRepo.UpdateUserStatus(match.User2ID, models.UserStatusOnline)
+
+			msg := "⚠️ بازی قبلی به پایان رسیده است.\n\nمی‌توانید دوباره جستجو کنید."
+			keyboard := tgbotapi.NewInlineKeyboardMarkup(
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("🎲 جستجوی مجدد", "btn:tod_new_game"),
+				),
+			)
+			bot.SendMessage(userID, msg, keyboard)
+			return
+		}
+
 		// Resume existing game
 		h.ResumeTodGame(userID, existingGame.ID, bot)
 		return
