@@ -490,7 +490,24 @@ func (h *HandlerManager) ResumeTodGame(userID int64, gameID uint, bot BotInterfa
 		if turn != nil {
 			h.ShowTodJudgmentScreen(gameID, turn, bot)
 		}
+	case models.TodStateMatchmaking:
+		// Recover game stuck in matchmaking
+		h.HandleTodCoinFlip(gameID, bot)
+	case models.TodStateCoinFlip:
+		// Coin flip done, waiting for start
+		activeUser := getUserByID(game.ActivePlayerID, game.Match)
+		passiveUser := getUserByID(game.PassivePlayerID, game.Match)
+
+		msg := fmt.Sprintf("🎲 نتیجه قرعه‌کشی:\n\n🎯 نوبت اول: %s\n⏳ نوبت دوم: %s\n\nبازی شروع شد! 🎮\nراند 1 از %d",
+			activeUser.FullName, passiveUser.FullName, game.MaxRounds)
+
+		keyboard := tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("▶️ ادامه", fmt.Sprintf("btn:tod_start_%d", gameID)),
+			),
+		)
+		bot.SendMessage(userID, msg, keyboard)
 	default:
-		bot.SendMessage(userID, "⚠️ وضعیت بازی نامشخص است", nil)
+		bot.SendMessage(userID, fmt.Sprintf("⚠️ وضعیت بازی نامشخص است: %s", game.State), nil)
 	}
 }
