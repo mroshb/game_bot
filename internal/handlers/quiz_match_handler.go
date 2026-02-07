@@ -319,16 +319,38 @@ func (h *HandlerManager) ShowQuizGameDetail(userID int64, matchID uint, bot BotI
 	msg += "└─────────────────────────────┘\n"
 
 	var keyboard tgbotapi.InlineKeyboardMarkup
+
+	// Check how many questions this user has answered in the current round
+	currentRound, _ := h.QuizMatchRepo.GetQuizRound(matchID, match.CurrentRound)
+	questionsAnswered := 0
+	if currentRound != nil {
+		ans, _ := h.QuizMatchRepo.GetUserAnswers(matchID, currentRound.ID, user.ID)
+		questionsAnswered = len(ans)
+	}
+
 	if isMyTurn && match.State == models.QuizStateWaitingCategory {
 		keyboard = tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("🏁 شروع راند", fmt.Sprintf("btn:qstart_%d", matchID)),
+				tgbotapi.NewInlineKeyboardButtonData("🏁 انتخاب موضوع", fmt.Sprintf("btn:qstart_%d", matchID)),
 			),
 			tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData("🔙 بازگشت", "btn:quiz_games"),
 			),
 		)
-	} else if !isMyTurn {
+	} else if currentRound != nil && questionsAnswered < models.QuizQuestionsPerRound {
+		btnText := "🏁 شروع بازی"
+		if questionsAnswered > 0 {
+			btnText = " ادامه بازی 🔄"
+		}
+		keyboard = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData(btnText, fmt.Sprintf("btn:qplay_%d", matchID)),
+			),
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🔙 بازگشت", "btn:quiz_games"),
+			),
+		)
+	} else if !isMyTurn && match.State == models.QuizStateWaitingCategory {
 		keyboard = tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData("🔔 یادآوری", fmt.Sprintf("btn:qnotify_%d", matchID)),

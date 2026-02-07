@@ -43,6 +43,10 @@ func (h *HandlerManager) HandleBoosterRemove2(userID int64, matchID uint, questi
 		return
 	}
 
+	if len(session.Questions) < questionNum {
+		session.mu.Unlock()
+		return
+	}
 	question := session.Questions[questionNum-1]
 	session.mu.Unlock()
 
@@ -124,7 +128,10 @@ func (h *HandlerManager) HandleBoosterRetry(userID int64, matchID uint, question
 		return
 	}
 
-	question := session.Questions[questionNum-1]
+	if len(session.Questions) < questionNum {
+		session.mu.Unlock()
+		return
+	}
 	session.mu.Unlock()
 
 	err := h.QuizMatchRepo.UseBooster(user.ID, models.BoosterSecondChance)
@@ -147,10 +154,7 @@ func (h *HandlerManager) HandleBoosterRetry(userID int64, matchID uint, question
 
 	time.Sleep(1 * time.Second)
 
-	var options []string
-	json.Unmarshal([]byte(question.Options), &options)
-
-	h.sendQuestionToUser(userID, user.ID, matchID, questionNum, question, options, bot)
+	h.SendQuizQuestionToUser(matchID, user.ID, questionNum, bot)
 }
 
 // ========================================
@@ -221,6 +225,7 @@ func (h *HandlerManager) EndQuizRound(matchID uint, bot BotInterface) {
 		h.QuizMatchRepo.SwitchTurn(matchID)
 
 		session.mu.Lock()
+		session.Questions = nil
 		session.User1AnsweredQ = make(map[int]bool)
 		session.User2AnsweredQ = make(map[int]bool)
 		session.User1UsedRemove2 = make(map[int]bool)

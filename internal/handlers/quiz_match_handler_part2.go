@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"strings"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -33,7 +34,7 @@ func (h *HandlerManager) ShowCategorySelection(userID int64, matchID uint, bot B
 		return
 	}
 
-	categories := []string{"اطلاعات عمومی", "تاریخ", "ورزش", "سینما", "جغرافیا", "علم"}
+	categories := []string{"اطلاعات عمومی", "تاریخ", "فوتبال", "تکنولوژی", "جغرافیا", "بازی های ویدیویی", "مذهبی", "زبان انگلیسی", "ریاضی"}
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(categories), func(i, j int) {
 		categories[i], categories[j] = categories[j], categories[i]
@@ -91,7 +92,14 @@ func (h *HandlerManager) HandleCategorySelection(userID int64, matchID uint, cat
 		questions, _ = h.GameRepo.GetQuizQuestions(models.QuizQuestionsPerRound)
 	}
 
-	round, err := h.QuizMatchRepo.CreateQuizRound(matchID, match.CurrentRound, category, user.ID)
+	// Store question IDs
+	var qIDs []string
+	for _, q := range questions {
+		qIDs = append(qIDs, fmt.Sprintf("%d", q.ID))
+	}
+	questionIDsStr := strings.Join(qIDs, ",")
+
+	round, err := h.QuizMatchRepo.CreateQuizRound(matchID, match.CurrentRound, category, user.ID, questionIDsStr)
 	if err != nil {
 		logger.Error("Failed to create round", "error", err)
 		return
@@ -103,9 +111,12 @@ func (h *HandlerManager) HandleCategorySelection(userID int64, matchID uint, cat
 	session.mu.Lock()
 	session.RoundID = round.ID
 	session.Questions = questions
-	session.QuestionNumber = 1
-	session.User1QuestionStart = time.Now()
-	session.User2QuestionStart = time.Now()
+	// We'll use shared Questions list but start playing only for the current user
+	if match.User1ID == user.ID {
+		session.User1QuestionStart = time.Now()
+	} else {
+		session.User2QuestionStart = time.Now()
+	}
 	session.mu.Unlock()
 
 	opponentID := match.User2ID
@@ -114,41 +125,67 @@ func (h *HandlerManager) HandleCategorySelection(userID int64, matchID uint, cat
 	}
 	opponent, _ := h.UserRepo.GetUserByID(opponentID)
 
-	msg := fmt.Sprintf("✅ موضوع انتخاب شد: *%s*\n\nسؤالات شروع شد!", category)
+	msg := fmt.Sprintf("✅ موضوع انتخاب شد: *%s*\n\nآماده‌ای؟ سؤالات شروع شد!", category)
 	bot.SendMessage(user.TelegramID, msg, nil)
+
 	if opponent != nil {
-		bot.SendMessage(opponent.TelegramID, msg, nil)
+		oppMsg := fmt.Sprintf("🎭 %s موضوع را انتخاب کرد: *%s*\n\nهر وقت آماده بودی بازی رو شروع کن!", user.FullName, category)
+		bot.SendMessage(opponent.TelegramID, oppMsg, nil)
+		// Send game board to opponent so they can see "Start Round" button
+		h.ShowQuizGameDetail(opponent.TelegramID, matchID, bot)
 	}
 
 	time.Sleep(1 * time.Second)
 
-	lightsMsg1 := bot.SendMessage(match.User1.TelegramID, "⚪️ ⚪️ ⚪️ ⚪️", nil)
-	lightsMsg2 := bot.SendMessage(match.User2.TelegramID, "⚪️ ⚪️ ⚪️ ⚪️", nil)
+	// User who selected category starts immediately
+	msgID := bot.SendMessage(user.TelegramID, "⚪️ ⚪️ ⚪️ ⚪️", nil)
+	h.QuizMatchRepo.UpdateLightsMessageID(matchID, user.ID, msgID)
 
-	h.QuizMatchRepo.UpdateLightsMessageID(matchID, match.User1ID, lightsMsg1)
-	h.QuizMatchRepo.UpdateLightsMessageID(matchID, match.User2ID, lightsMsg2)
-
-	h.SendQuizQuestion(matchID, 1, bot)
+	h.SendQuizQuestionToUser(matchID, user.ID, 1, bot)
 }
 
-// ========================================
-// QUESTION ARENA
-// ========================================
-
-func (h *HandlerManager) SendQuizQuestion(matchID uint, questionNum int, bot BotInterface) {
+func (h *HandlerManager) SendQuizQuestionToUser(matchID uint, userID uint, questionNum int, bot BotInterface) {
 	match, err := h.QuizMatchRepo.GetQuizMatch(matchID)
 	if err != nil {
 		return
 	}
 
+	user, _ := h.UserRepo.GetUserByID(userID)
+	if user == nil {
+		return
+	}
+
 	session := getQuizGameSession(matchID)
 	session.mu.Lock()
+
+	// If session questions are empty (e.g. after restart), reload them from DB
+	if len(session.Questions) == 0 {
+		round, _ := h.QuizMatchRepo.GetQuizRound(matchID, match.CurrentRound)
+		if round != nil && round.QuestionIDs != "" {
+			ids := strings.Split(round.QuestionIDs, ",")
+			for _, idStr := range ids {
+				var id uint
+				fmt.Sscanf(idStr, "%d", &id)
+				q, _ := h.GameRepo.GetQuestionByID(id)
+				if q != nil {
+					session.Questions = append(session.Questions, *q)
+				}
+			}
+			session.RoundID = round.ID
+		}
+	}
+
 	if questionNum > len(session.Questions) {
 		session.mu.Unlock()
 		return
 	}
 	question := session.Questions[questionNum-1]
-	session.QuestionNumber = questionNum
+
+	if userID == match.User1ID {
+		session.User1QuestionStart = time.Now()
+	} else {
+		session.User2QuestionStart = time.Now()
+	}
 	session.mu.Unlock()
 
 	var options []string
@@ -157,17 +194,53 @@ func (h *HandlerManager) SendQuizQuestion(matchID uint, questionNum int, bot Bot
 		return
 	}
 
-	h.sendQuestionToUser(match.User1.TelegramID, match.User1ID, matchID, questionNum, question, options, bot)
-	h.sendQuestionToUser(match.User2.TelegramID, match.User2ID, matchID, questionNum, question, options, bot)
+	h.sendQuestionToUser(user.TelegramID, userID, matchID, questionNum, question, options, bot)
 
-	session.mu.Lock()
-	if session.QuestionTimer != nil {
-		session.QuestionTimer.Stop()
+	// Per-user timer
+	go func(mID, uID uint, qNum int) {
+		time.Sleep(time.Duration(models.QuizQuestionTimeSeconds) * time.Second)
+		h.HandleUserQuestionTimeout(mID, uID, qNum, bot)
+	}(matchID, userID, questionNum)
+}
+
+// ========================================
+// QUESTION ARENA
+// ========================================
+
+func (h *HandlerManager) HandleQuizPlay(userID int64, matchID uint, bot BotInterface) {
+	user, err := h.UserRepo.GetUserByTelegramID(userID)
+	if err != nil {
+		return
 	}
-	session.QuestionTimer = time.AfterFunc(time.Duration(models.QuizQuestionTimeSeconds)*time.Second, func() {
-		h.HandleQuestionTimeout(matchID, questionNum, bot)
-	})
-	session.mu.Unlock()
+
+	match, err := h.QuizMatchRepo.GetQuizMatch(matchID)
+	if err != nil {
+		return
+	}
+
+	round, _ := h.QuizMatchRepo.GetQuizRound(matchID, match.CurrentRound)
+	if round == nil {
+		bot.SendMessage(userID, "❌ این راند هنوز آماده نشده است!", nil)
+		return
+	}
+
+	// Check how many questions answered
+	ans, _ := h.QuizMatchRepo.GetUserAnswers(matchID, round.ID, user.ID)
+	nextQ := len(ans) + 1
+
+	if nextQ > models.QuizQuestionsPerRound {
+		bot.SendMessage(userID, "⚠️ شما تمام سؤالات این راند رو پاسخ دادید!", nil)
+		return
+	}
+
+	// Initialize lights if it's the first question
+	if nextQ == 1 {
+		msgID := bot.SendMessage(userID, "⚪️ ⚪️ ⚪️ ⚪️", nil)
+		h.QuizMatchRepo.UpdateLightsMessageID(matchID, user.ID, msgID)
+	}
+
+	// Start from the next question
+	h.SendQuizQuestionToUser(matchID, user.ID, nextQ, bot)
 }
 
 func (h *HandlerManager) sendQuestionToUser(userTgID int64, userID, matchID uint, questionNum int, question models.Question, options []string, bot BotInterface) {
@@ -254,7 +327,7 @@ func (h *HandlerManager) HandleQuizAnswer(userID int64, matchID uint, questionNu
 
 	if alreadyAnswered {
 		session.mu.Unlock()
-		bot.SendMessage(userID, "⚠️ شما قبلاً به این سؤال پاسخ دادهاید!", nil)
+		// Silently ignore if already answered (might be a double click)
 		return
 	}
 
@@ -306,33 +379,32 @@ func (h *HandlerManager) HandleQuizAnswer(userID int64, matchID uint, questionNu
 
 	h.UpdateQuizLights(matchID, user.ID, questionNum, isCorrect, bot)
 
-	session.mu.Lock()
-	bothAnswered := session.User1AnsweredQ[questionNum] && session.User2AnsweredQ[questionNum]
-	session.mu.Unlock()
+	time.Sleep(1500 * time.Millisecond)
 
-	if bothAnswered {
+	if questionNum < models.QuizQuestionsPerRound {
+		nextQ := questionNum + 1
+		h.SendQuizQuestionToUser(matchID, user.ID, nextQ, bot)
+	} else {
+		// This user finished. Check if both finished.
 		session.mu.Lock()
-		if session.QuestionTimer != nil {
-			session.QuestionTimer.Stop()
+		user1Finished := true
+		user2Finished := true
+		for i := 1; i <= models.QuizQuestionsPerRound; i++ {
+			if !session.User1AnsweredQ[i] {
+				user1Finished = false
+			}
+			if !session.User2AnsweredQ[i] {
+				user2Finished = false
+			}
 		}
 		session.mu.Unlock()
 
-		time.Sleep(2 * time.Second)
-
-		if questionNum < models.QuizQuestionsPerRound {
-			nextQ := questionNum + 1
-			nextState := fmt.Sprintf("playing_q%d", nextQ)
-			h.QuizMatchRepo.UpdateQuizMatchState(matchID, nextState)
-			h.QuizMatchRepo.UpdateCurrentQuestion(matchID, nextQ)
-
-			session.mu.Lock()
-			session.User1QuestionStart = time.Now()
-			session.User2QuestionStart = time.Now()
-			session.mu.Unlock()
-
-			h.SendQuizQuestion(matchID, nextQ, bot)
-		} else {
+		if user1Finished && user2Finished {
 			h.EndQuizRound(matchID, bot)
+		} else {
+			bot.SendMessage(userID, "🏁 شما سؤالات این راند رو تموم کردی!\n\nمنتظر بمون تا حریف هم بازیش رو انجام بده.", nil)
+			// Show updated game board
+			h.ShowQuizGameDetail(userID, matchID, bot)
 		}
 	}
 }
@@ -341,60 +413,76 @@ func (h *HandlerManager) HandleQuizAnswer(userID int64, matchID uint, questionNu
 // HANDLE QUESTION TIMEOUT
 // ========================================
 
-func (h *HandlerManager) HandleQuestionTimeout(matchID uint, questionNum int, bot BotInterface) {
+func (h *HandlerManager) HandleUserQuestionTimeout(matchID, userID uint, questionNum int, bot BotInterface) {
 	match, err := h.QuizMatchRepo.GetQuizMatch(matchID)
 	if err != nil {
+		return
+	}
+
+	user, _ := h.UserRepo.GetUserByID(userID)
+	if user == nil {
 		return
 	}
 
 	session := getQuizGameSession(matchID)
 	session.mu.Lock()
 
-	if !session.User1AnsweredQ[questionNum] {
+	alreadyAnswered := false
+	if match.User1ID == userID {
+		alreadyAnswered = session.User1AnsweredQ[questionNum]
+	} else {
+		alreadyAnswered = session.User2AnsweredQ[questionNum]
+	}
+
+	if alreadyAnswered {
+		session.mu.Unlock()
+		return
+	}
+
+	if match.User1ID == userID {
 		session.User1AnsweredQ[questionNum] = true
-		session.mu.Unlock()
-
-		if questionNum <= len(session.Questions) {
-			question := session.Questions[questionNum-1]
-			h.QuizMatchRepo.RecordAnswer(matchID, session.RoundID, match.User1ID, question.ID, questionNum, -1, models.QuizQuestionTimeSeconds*1000, false, "")
-			bot.SendMessage(match.User1.TelegramID, "⏰ زمان تمام شد! پاسخ شما: غلط", nil)
-			h.UpdateQuizLights(matchID, match.User1ID, questionNum, false, bot)
-		}
-
-		session.mu.Lock()
-	}
-
-	if !session.User2AnsweredQ[questionNum] {
+	} else {
 		session.User2AnsweredQ[questionNum] = true
-		session.mu.Unlock()
-
-		if questionNum <= len(session.Questions) {
-			question := session.Questions[questionNum-1]
-			h.QuizMatchRepo.RecordAnswer(matchID, session.RoundID, match.User2ID, question.ID, questionNum, -1, models.QuizQuestionTimeSeconds*1000, false, "")
-			bot.SendMessage(match.User2.TelegramID, "⏰ زمان تمام شد! پاسخ شما: غلط", nil)
-			h.UpdateQuizLights(matchID, match.User2ID, questionNum, false, bot)
-		}
-
-		session.mu.Lock()
 	}
+
+	if questionNum > len(session.Questions) {
+		session.mu.Unlock()
+		return
+	}
+	question := session.Questions[questionNum-1]
 	session.mu.Unlock()
 
-	time.Sleep(2 * time.Second)
+	// Record wrong answer for timeout
+	h.QuizMatchRepo.RecordAnswer(matchID, session.RoundID, userID, question.ID, questionNum, -1, models.QuizQuestionTimeSeconds*1000, false, "")
+	bot.SendMessage(user.TelegramID, "⏰ زمان تمام شد! پاسخ شما: غلط", nil)
+	h.UpdateQuizLights(matchID, userID, questionNum, false, bot)
+
+	time.Sleep(1500 * time.Millisecond)
 
 	if questionNum < models.QuizQuestionsPerRound {
 		nextQ := questionNum + 1
-		nextState := fmt.Sprintf("playing_q%d", nextQ)
-		h.QuizMatchRepo.UpdateQuizMatchState(matchID, nextState)
-		h.QuizMatchRepo.UpdateCurrentQuestion(matchID, nextQ)
-
+		h.SendQuizQuestionToUser(matchID, userID, nextQ, bot)
+	} else {
+		// This user finished. Check if both finished.
 		session.mu.Lock()
-		session.User1QuestionStart = time.Now()
-		session.User2QuestionStart = time.Now()
+		user1Finished := true
+		user2Finished := true
+		for i := 1; i <= models.QuizQuestionsPerRound; i++ {
+			if !session.User1AnsweredQ[i] {
+				user1Finished = false
+			}
+			if !session.User2AnsweredQ[i] {
+				user2Finished = false
+			}
+		}
 		session.mu.Unlock()
 
-		h.SendQuizQuestion(matchID, nextQ, bot)
-	} else {
-		h.EndQuizRound(matchID, bot)
+		if user1Finished && user2Finished {
+			h.EndQuizRound(matchID, bot)
+		} else {
+			bot.SendMessage(user.TelegramID, "🏁 شما سؤالات این راند رو تموم کردی!\n\nمنتظر بمون تا حریف هم بازیش رو انجام بده.", nil)
+			h.ShowQuizGameDetail(user.TelegramID, matchID, bot)
+		}
 	}
 }
 

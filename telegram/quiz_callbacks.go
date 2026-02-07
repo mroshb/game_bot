@@ -52,6 +52,14 @@ func (b *Bot) HandleQuizCallbacks(query *tgbotapi.CallbackQuery, data string) bo
 		return true
 	}
 
+	// Start playing questions (asynchronous)
+	if strings.HasPrefix(cmd, "qplay_") {
+		var matchID uint
+		fmt.Sscanf(cmd, "qplay_%d", &matchID)
+		b.handlers.HandleQuizPlay(userID, matchID, b)
+		return true
+	}
+
 	// Category selection
 	if strings.HasPrefix(cmd, "qcat_") {
 		parts := strings.SplitN(cmd, "_", 3)

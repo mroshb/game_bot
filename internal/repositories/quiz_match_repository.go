@@ -181,12 +181,13 @@ func (r *QuizMatchRepository) UpdateLightsMessageID(matchID, userID uint, messag
 }
 
 // CreateQuizRound creates a new round in a quiz match
-func (r *QuizMatchRepository) CreateQuizRound(matchID uint, roundNum int, category string, chosenBy uint) (*models.QuizRound, error) {
+func (r *QuizMatchRepository) CreateQuizRound(matchID uint, roundNum int, category string, chosenBy uint, questionIDs string) (*models.QuizRound, error) {
 	round := &models.QuizRound{
 		MatchID:        matchID,
 		RoundNumber:    roundNum,
 		Category:       category,
 		ChosenByUserID: chosenBy,
+		QuestionIDs:    questionIDs,
 	}
 
 	if err := r.db.Create(round).Error; err != nil {

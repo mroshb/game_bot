@@ -46,6 +46,7 @@ type QuizRound struct {
 	User2CorrectCount int       `gorm:"default:0"`
 	User1TimeMs       int       `gorm:"default:0"`
 	User2TimeMs       int       `gorm:"default:0"`
+	QuestionIDs       string    `gorm:"type:text"` // Comma separated list of question IDs
 	CreatedAt         time.Time `gorm:"autoCreateTime"`
 }
 

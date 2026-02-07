@@ -57,7 +57,7 @@ func (h *HandlerManager) HandleTodProofSubmission(userID int64, gameID uint, mes
 	if message.Voice != nil {
 		proofType = models.ProofTypeVoice
 		proofData = message.Voice.FileID
-	} else if message.Photo != nil && len(message.Photo) > 0 {
+	} else if len(message.Photo) > 0 {
 		proofType = models.ProofTypeImage
 		proofData = message.Photo[len(message.Photo)-1].FileID
 	} else if message.Video != nil {
