@@ -572,15 +572,8 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 
 	case normalizeButton(BtnQuiz):
 		clearState()
-		user, _ := b.handlers.UserRepo.GetUserByTelegramID(userID)
-		match, _ := b.handlers.MatchRepo.GetActiveMatch(user.ID)
-
-		if match != nil {
-			b.handlers.StartQuiz(userID, b)
-		} else {
-			b.getSession(userID).Data["game_type"] = "quiz"
-			b.sendMessage(userID, "🧠 کوییز رو انتخاب کردی. حالا مدلش رو مشخص کن:", GameMatchModeKeyboard(true))
-		}
+		// Show active quiz games menu (Glass Menu)
+		b.handlers.ShowActiveQuizGames(userID, b)
 
 	case normalizeButton(BtnTruthDare):
 		clearState()
@@ -1096,6 +1089,12 @@ func (b *Bot) handleCallbackQuery(query *tgbotapi.CallbackQuery) {
 	// New quiz game
 	if data == "new_quiz_game" {
 		b.handlers.StartNewQuizGame(userID, b)
+		return
+	}
+
+	// Cancel quiz matchmaking
+	if data == "cancel_quiz_matchmaking" {
+		b.handlers.CancelQuizMatchmaking(userID, b)
 		return
 	}
 

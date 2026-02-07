@@ -61,6 +61,14 @@ func (r *MatchRepository) FindMatch(userID uint, filters *models.MatchFilters) (
 		Joins("JOIN users ON users.id = matchmaking_queue.user_id").
 		Where("matchmaking_queue.user_id != ?", userID)
 
+	// Apply GameType filter
+	if filters.GameType != "" {
+		query = query.Where("matchmaking_queue.game_type = ?", filters.GameType)
+	} else {
+		// Default to chat if not specified (backward compatibility)
+		query = query.Where("matchmaking_queue.game_type = ?", models.GameTypeChat)
+	}
+
 	// Apply filters
 	if filters.Gender != "" && filters.Gender != models.RequestedGenderAny {
 		query = query.Where("users.gender = ?", filters.Gender)

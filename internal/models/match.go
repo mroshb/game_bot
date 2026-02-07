@@ -39,7 +39,8 @@ type MatchmakingQueue struct {
 	MinAge          *int      `gorm:"index"`
 	MaxAge          *int      `gorm:"index"`
 	City            string    `gorm:"type:varchar(100);index"`
-	TargetProvinces string    `gorm:"type:text"` // Comma separated list of provinces
+	TargetProvinces string    `gorm:"type:text"`                             // Comma separated list of provinces
+	GameType        string    `gorm:"type:varchar(20);default:'chat';index"` // chat, quiz, tod
 	CoinsPaid       int64     `gorm:"default:5;index"`
 	CreatedAt       time.Time `gorm:"autoCreateTime;index"`
 }
@@ -49,6 +50,13 @@ const (
 	RequestedGenderMale   = "male"
 	RequestedGenderFemale = "female"
 	RequestedGenderAny    = "any"
+)
+
+// Game type constants for matchmaking
+const (
+	GameTypeChat = "chat"
+	GameTypeTod  = "tod"
+	// GameTypeQuiz is defined in game.go
 )
 
 func (MatchmakingQueue) TableName() string {
@@ -62,4 +70,5 @@ type MatchFilters struct {
 	MaxAge    *int
 	City      string
 	Provinces []string
+	GameType  string
 }

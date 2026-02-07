@@ -66,6 +66,7 @@ func (h *HandlerManager) StartMatchmaking(userID int64, requestedGender string, 
 		UserID:          user.ID,
 		RequestedGender: requestedGender,
 		CoinsPaid:       h.Config.MatchCostCoins,
+		GameType:        models.GameTypeChat,
 	}
 
 	// Apply filters from session
@@ -277,6 +278,7 @@ func (h *HandlerManager) findMatch(userID uint, queue *models.MatchmakingQueue, 
 				MaxAge:    queue.MaxAge,
 				City:      queue.City,
 				Provinces: provinces,
+				GameType:  models.GameTypeChat,
 			})
 
 			if err != nil {

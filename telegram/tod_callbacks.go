@@ -26,8 +26,8 @@ func (b *Bot) HandleTodCallbacks(query *tgbotapi.CallbackQuery, data string) boo
 
 		case data == "btn:tod_cancel_search":
 			// Cancel matchmaking
+			b.handlers.CancelTodMatchmaking(userID, b)
 			b.api.Send(tgbotapi.NewCallback(query.ID, "جستجو لغو شد"))
-			b.SendMessage(userID, "❌ جستجو لغو شد", nil)
 			return true
 
 		case strings.HasPrefix(data, "btn:tod_start_"):

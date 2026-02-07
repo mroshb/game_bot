@@ -8,7 +8,6 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/mroshb/game_bot/internal/models"
-	"github.com/mroshb/game_bot/pkg/logger"
 )
 
 // QuizGameSession holds in-memory state for active quiz games
@@ -386,48 +385,6 @@ func (h *HandlerManager) NotifyQuizOpponent(userID int64, matchID uint, bot BotI
 // ========================================
 
 func (h *HandlerManager) StartNewQuizGame(userID int64, bot BotInterface) {
-	user, err := h.UserRepo.GetUserByTelegramID(userID)
-	if err != nil {
-		bot.SendMessage(userID, "❌ خطا در دریافت اطلاعات!", nil)
-		return
-	}
-
-	activeMatch, _ := h.QuizMatchRepo.GetActiveQuizMatchByUser(user.ID)
-	if activeMatch != nil {
-		bot.SendMessage(userID, "⚠️ شما یک بازی فعال دارید! ابتدا آن را تمام کنید.", nil)
-		h.ShowQuizGameDetail(userID, activeMatch.ID, bot)
-		return
-	}
-
-	chatMatch, _ := h.MatchRepo.GetActiveMatch(user.ID)
-	if chatMatch == nil {
-		bot.SendMessage(userID, "⚠️ برای شروع بازی کوئیز، ابتدا باید در یک چت فعال باشید!", nil)
-		return
-	}
-
-	opponentID := chatMatch.User1ID
-	if user.ID == chatMatch.User1ID {
-		opponentID = chatMatch.User2ID
-	}
-
-	match, err := h.QuizMatchRepo.CreateQuizMatch(user.ID, opponentID)
-	if err != nil {
-		logger.Error("Failed to create quiz match", "error", err)
-		bot.SendMessage(userID, "❌ خطا در ایجاد بازی!", nil)
-		return
-	}
-
-	opponent, _ := h.UserRepo.GetUserByID(opponentID)
-
-	msg := fmt.Sprintf("🧠 بازی کوئیز شروع شد!\n\n📊 شرایط بازی:\n▫️ %d راند %d سؤاله\n▫️ هر راند یک موضوع انتخابی\n▫️ برنده بر اساس جواب درست و سرعت مشخص میشه!\n\nآماده باش!", models.QuizTotalRounds, models.QuizQuestionsPerRound)
-
-	bot.SendMessage(user.TelegramID, msg, nil)
-	if opponent != nil {
-		bot.SendMessage(opponent.TelegramID, msg, nil)
-	}
-
-	time.Sleep(2 * time.Second)
-	h.ShowQuizGameDetail(userID, match.ID, bot)
+	// Delegate to matchmaking function
+	h.StartQuizMatchmaking(userID, bot)
 }
-
-// Continued in next message due to length limit...
