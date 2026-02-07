@@ -80,6 +80,10 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.TodPlayerStats{},
 		&models.TodJudgmentLog{},
 		&models.TodActionLog{},
+		&models.QuizMatch{},
+		&models.QuizRound{},
+		&models.QuizAnswer{},
+		&models.UserBooster{},
 	)
 
 	if err != nil {

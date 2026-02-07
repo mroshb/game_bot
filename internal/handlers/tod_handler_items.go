@@ -255,6 +255,11 @@ func (h *HandlerManager) EndTodGame(gameID uint, bot BotInterface) {
 	// End game
 	h.TodRepo.EndGame(gameID, winnerID, "completed")
 
+	// Close match session
+	if game.MatchID > 0 {
+		h.MatchRepo.EndMatch(game.MatchID)
+	}
+
 	// Update player stats
 	if winnerID > 0 {
 		h.TodRepo.IncrementGamesPlayed(winnerID, true)
@@ -342,6 +347,11 @@ func (h *HandlerManager) HandleTodTimeout(gameID uint, bot BotInterface) {
 	// End game
 	h.TodRepo.HandleTimeout(gameID)
 
+	// Close match session
+	if game.MatchID > 0 {
+		h.MatchRepo.EndMatch(game.MatchID)
+	}
+
 	// Update stats
 	h.TodRepo.IncrementGamesPlayed(winnerID, true)
 	h.TodRepo.IncrementGamesPlayed(timedOutPlayerID, false)
@@ -411,6 +421,11 @@ func (h *HandlerManager) HandleTodQuit(userID int64, gameID uint, bot BotInterfa
 
 	// End game
 	h.TodRepo.EndGame(gameID, winnerID, "quit")
+
+	// Close match session
+	if game.MatchID > 0 {
+		h.MatchRepo.EndMatch(game.MatchID)
+	}
 
 	// Update stats
 	h.TodRepo.IncrementGamesPlayed(winnerID, true)
