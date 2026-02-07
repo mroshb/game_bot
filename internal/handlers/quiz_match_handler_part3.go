@@ -229,16 +229,10 @@ func (h *HandlerManager) EndQuizRound(matchID uint, bot BotInterface) {
 		session.User2UsedRetry = make(map[int]bool)
 		session.mu.Unlock()
 
+		// Refresh match data to get updated turn and state
 		match, _ = h.QuizMatchRepo.GetQuizMatch(matchID)
-		if match.TurnUserID != nil {
-			if *match.TurnUserID == match.User1ID {
-				bot.SendMessage(match.User1.TelegramID, fmt.Sprintf("🎭 راند %d: نوبت شماست که موضوع رو انتخاب کنی!", match.CurrentRound), nil)
-				bot.SendMessage(match.User2.TelegramID, fmt.Sprintf("⏳ راند %d: منتظر انتخاب %s...", match.CurrentRound, match.User1.FullName), nil)
-			} else {
-				bot.SendMessage(match.User2.TelegramID, fmt.Sprintf("🎭 راند %d: نوبت شماست که موضوع رو انتخاب کنی!", match.CurrentRound), nil)
-				bot.SendMessage(match.User1.TelegramID, fmt.Sprintf("⏳ راند %d: منتظر انتخاب %s...", match.CurrentRound, match.User2.FullName), nil)
-			}
-		}
+		h.ShowQuizGameDetail(match.User1.TelegramID, matchID, bot)
+		h.ShowQuizGameDetail(match.User2.TelegramID, matchID, bot)
 	}
 }
 
