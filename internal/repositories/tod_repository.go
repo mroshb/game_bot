@@ -195,22 +195,28 @@ func (r *TodRepository) UpdateTurnRewards(turnID uint, xp, coins int) error {
 
 // GetRandomChallenge retrieves a random challenge based on filters
 func (r *TodRepository) GetRandomChallenge(challengeType, difficulty, category, gender, relation string) (*models.TodChallenge, error) {
+	var challenge models.TodChallenge
+
+	// Base query
 	query := r.db.Where("type = ? AND is_active = ?", challengeType, true)
 
 	if difficulty != "" {
 		query = query.Where("difficulty = ?", difficulty)
 	}
-	if category != "" {
-		query = query.Where("category = ?", category)
-	}
+
+	// Temporarily remove category filter to increase match rate
+	// if category != "" {
+	// 	query = query.Where("category = ?", category)
+	// }
+
 	if gender != "" && gender != "all" {
-		query = query.Where("gender_target IN (?, ?)", gender, "all")
-	}
-	if relation != "" {
-		query = query.Where("relation_level = ?", relation)
+		query = query.Where("gender_target IN (?)", []string{gender, "all"})
 	}
 
-	var challenge models.TodChallenge
+	if relation != "" {
+		// query = query.Where("relation_level = ?", relation)
+	}
+
 	err := query.Order("RANDOM()").First(&challenge).Error
 	if err != nil {
 		// Fallback: try without filters
