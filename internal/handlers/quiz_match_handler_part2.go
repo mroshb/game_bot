@@ -479,7 +479,8 @@ func (h *HandlerManager) HandleQuizAnswer(userID int64, matchID uint, questionNu
 		if user1Finished && user2Finished {
 			h.EndQuizRound(matchID, bot)
 		} else {
-			bot.SendMessage(userID, "🏁 شما سؤالات این راند رو تموم کردی!\n\nمنتظر بمون تا حریف هم بازیش رو انجام بده.", nil)
+			msg := "⏳ شما تمام سوالات این راند را پاسخ داده‌اید.\n\nمنتظر حریف باشید تا راند تمام شود..."
+			bot.SendMessage(userID, msg, nil)
 			// Show updated game board
 			h.ShowQuizGameDetail(userID, matchID, bot)
 		}
@@ -592,7 +593,8 @@ func (h *HandlerManager) HandleUserQuestionTimeout(matchID, userID uint, questio
 		if user1Finished && user2Finished {
 			h.EndQuizRound(matchID, bot)
 		} else {
-			bot.SendMessage(user.TelegramID, "🏁 شما سؤالات این راند رو تموم کردی!\n\nمنتظر بمون تا حریف هم بازیش رو انجام بده.", nil)
+			msg := "⏳ شما تمام سوالات این راند را پاسخ داده‌اید.\n\nمنتظر حریف باشید تا راند تمام شود..."
+			bot.SendMessage(user.TelegramID, msg, nil)
 			h.ShowQuizGameDetail(user.TelegramID, matchID, bot)
 		}
 	}
