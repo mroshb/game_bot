@@ -7,6 +7,7 @@ import (
 	"github.com/mroshb/game_bot/internal/models"
 	"github.com/mroshb/game_bot/pkg/logger"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type TodRepository struct {
@@ -17,6 +18,11 @@ func NewTodRepository(db *gorm.DB) *TodRepository {
 	return &TodRepository{db: db}
 }
 
+// WithTx returns a new instance of TodRepository with the transaction
+func (r *TodRepository) WithTx(tx *gorm.DB) *TodRepository {
+	return &TodRepository{db: tx}
+}
+
 // ========================================
 // GAME CRUD OPERATIONS
 // ========================================
@@ -24,7 +30,7 @@ func NewTodRepository(db *gorm.DB) *TodRepository {
 // CreateGame creates a new ToD game linked to a match
 func (r *TodRepository) CreateGame(matchID uint, player1ID, player2ID uint) (*models.TodGame, error) {
 	now := time.Now()
-	deadline := now.Add(60 * time.Second)
+	deadline := now.Add(24 * time.Hour) // 24 hours for asynchronous play
 
 	game := &models.TodGame{
 		MatchID:         matchID,
@@ -127,8 +133,13 @@ func (r *TodRepository) GetCurrentTurn(gameID uint) (*models.TodTurn, error) {
 		return nil, gorm.ErrRecordNotFound
 	}
 
+	return r.GetTurnByID(game.CurrentTurnID)
+}
+
+// GetTurnByID retrieves a turn by its ID
+func (r *TodRepository) GetTurnByID(turnID uint) (*models.TodTurn, error) {
 	var turn models.TodTurn
-	err := r.db.Preload("Challenge").First(&turn, game.CurrentTurnID).Error
+	err := r.db.Preload("Challenge").First(&turn, turnID).Error
 	return &turn, err
 }
 
@@ -197,32 +208,34 @@ func (r *TodRepository) UpdateTurnRewards(turnID uint, xp, coins int) error {
 func (r *TodRepository) GetRandomChallenge(challengeType, difficulty, category, gender, relation string) (*models.TodChallenge, error) {
 	var challenge models.TodChallenge
 
-	// Base query
+	// Level 1: Strict filters (Difficulty + Gender + Relation)
 	query := r.db.Where("type = ? AND is_active = ?", challengeType, true)
-
 	if difficulty != "" {
 		query = query.Where("difficulty = ?", difficulty)
 	}
-
-	// Temporarily remove category filter to increase match rate
-	// if category != "" {
-	// 	query = query.Where("category = ?", category)
-	// }
-
 	if gender != "" && gender != "all" {
 		query = query.Where("gender_target IN (?)", []string{gender, "all"})
 	}
-
 	if relation != "" {
-		// query = query.Where("relation_level = ?", relation)
+		query = query.Where("relation_level IN (?)", []string{relation, "all"})
 	}
 
-	err := query.Order("RANDOM()").First(&challenge).Error
-	if err != nil {
-		// Fallback: try without filters
-		err = r.db.Where("type = ? AND is_active = ?", challengeType, true).
-			Order("RANDOM()").First(&challenge).Error
+	if err := query.Order("RANDOM()").First(&challenge).Error; err == nil {
+		return &challenge, nil
 	}
+
+	// Level 2: Relax relation and gender, keep difficulty
+	query = r.db.Where("type = ? AND is_active = ?", challengeType, true)
+	if difficulty != "" {
+		query = query.Where("difficulty = ?", difficulty)
+	}
+	if err := query.Order("RANDOM()").First(&challenge).Error; err == nil {
+		return &challenge, nil
+	}
+
+	// Level 3: Relax everything (Ultimate fallback)
+	err := r.db.Where("type = ? AND is_active = ?", challengeType, true).
+		Order("RANDOM()").First(&challenge).Error
 
 	return &challenge, err
 }
@@ -242,25 +255,19 @@ func (r *TodRepository) IncrementChallengeUsage(challengeID uint) error {
 
 // UpdateChallengeAcceptanceRate updates the acceptance rate
 func (r *TodRepository) UpdateChallengeAcceptanceRate(challengeID uint, wasAccepted bool) error {
-	var challenge models.TodChallenge
-	if err := r.db.First(&challenge, challengeID).Error; err != nil {
-		return err
-	}
+	// Use atomic SQL update to prevent race conditions
+	// Formula: new_rate = ((current_rate * (times_used - 1)) + added_value) / times_used
+	// If wasAccepted is true, added_value = 1.0, else 0.0
 
-	totalJudgments := challenge.TimesUsed
-	if totalJudgments == 0 {
-		totalJudgments = 1
-	}
-
-	currentAccepted := challenge.AcceptanceRate * float64(totalJudgments-1)
+	addedValue := 0.0
 	if wasAccepted {
-		currentAccepted++
+		addedValue = 1.0
 	}
-
-	newRate := currentAccepted / float64(totalJudgments)
 
 	return r.db.Model(&models.TodChallenge{}).Where("id = ?", challengeID).
-		Update("acceptance_rate", newRate).Error
+		Update("acceptance_rate", gorm.Expr(
+			"((acceptance_rate * (times_used - 1)) + ?) / NULLIF(times_used, 0)", addedValue,
+		)).Error
 }
 
 // ========================================
@@ -329,20 +336,21 @@ func (r *TodRepository) HandleTimeout(gameID uint) error {
 // GetOrCreatePlayerStats retrieves or creates player stats
 func (r *TodRepository) GetOrCreatePlayerStats(userID uint) (*models.TodPlayerStats, error) {
 	var stats models.TodPlayerStats
-	err := r.db.Where("user_id = ?", userID).First(&stats).Error
 
-	if err == gorm.ErrRecordNotFound {
-		stats = models.TodPlayerStats{
+	// Calculate max items to clamp values (though create usually sets defaults)
+	// We use FirstOrCreate with ON CONFLICT clause to handle race conditions safely
+	err := r.db.Where(models.TodPlayerStats{UserID: userID}).
+		Attrs(models.TodPlayerStats{
 			UserID:       userID,
 			JudgeScore:   100.0,
 			ShieldsOwned: 1,
 			SwapsOwned:   1,
 			MirrorsOwned: 1,
-		}
-		if err := r.db.Create(&stats).Error; err != nil {
-			return nil, err
-		}
-	} else if err != nil {
+		}).
+		Clauses(clause.OnConflict{DoNothing: true}).
+		FirstOrCreate(&stats).Error
+
+	if err != nil {
 		return nil, err
 	}
 
@@ -374,9 +382,10 @@ func (r *TodRepository) IncrementGamesPlayed(userID uint, won bool) error {
 func (r *TodRepository) IncrementChallengeCompleted(userID uint, choiceType string, wasAccepted bool) error {
 	updates := map[string]interface{}{}
 
-	if choiceType == models.TodTypeTruth {
+	switch choiceType {
+	case models.TodTypeTruth:
 		updates["truths_chosen"] = gorm.Expr("truths_chosen + 1")
-	} else if choiceType == models.TodTypeDare {
+	case models.TodTypeDare:
 		updates["dares_chosen"] = gorm.Expr("dares_chosen + 1")
 	}
 
@@ -410,31 +419,24 @@ func (r *TodRepository) UseItem(userID uint, itemType string) error {
 		return fmt.Errorf("invalid item type: %s", itemType)
 	}
 
-	// Check if user has item
-	var stats models.TodPlayerStats
-	if err := r.db.Where("user_id = ?", userID).First(&stats).Error; err != nil {
-		return err
+	// Use atomic update with condition to prevent going below zero
+	result := r.db.Model(&models.TodPlayerStats{}).
+		Where("user_id = ? AND "+field+" > 0", userID).
+		Updates(map[string]interface{}{
+			field:        gorm.Expr(field + " - 1"),
+			"items_used": gorm.Expr("items_used + 1"),
+			"updated_at": time.Now(),
+		})
+
+	if result.Error != nil {
+		return result.Error
 	}
 
-	var currentCount int
-	switch itemType {
-	case models.ItemTypeShield:
-		currentCount = stats.ShieldsOwned
-	case models.ItemTypeSwap:
-		currentCount = stats.SwapsOwned
-	case models.ItemTypeMirror:
-		currentCount = stats.MirrorsOwned
-	}
-
-	if currentCount <= 0 {
+	if result.RowsAffected == 0 {
 		return fmt.Errorf("insufficient items")
 	}
 
-	// Decrement
-	return r.UpdatePlayerStats(userID, map[string]interface{}{
-		field:        gorm.Expr(field + " - 1"),
-		"items_used": gorm.Expr("items_used + 1"),
-	})
+	return nil
 }
 
 // AddItem adds items to inventory
@@ -614,21 +616,26 @@ func (r *TodRepository) GetGameHistory(userID uint, limit int) ([]*models.TodGam
 
 // SwitchTurn switches active and passive players
 func (r *TodRepository) SwitchTurn(gameID uint) error {
-	var game models.TodGame
-	if err := r.db.First(&game, gameID).Error; err != nil {
-		return err
-	}
-
 	now := time.Now()
-	deadline := now.Add(60 * time.Second)
+	deadline := now.Add(24 * time.Hour)
 
+	// Use atomic SQL update to swap players
 	return r.db.Model(&models.TodGame{}).Where("id = ?", gameID).
 		Updates(map[string]interface{}{
-			"active_player_id":  game.PassivePlayerID,
-			"passive_player_id": game.ActivePlayerID,
+			"active_player_id":  gorm.Expr("passive_player_id"),
+			"passive_player_id": gorm.Expr("active_player_id"),
 			"turn_started_at":   now,
 			"turn_deadline":     deadline,
 			"warning_shown_at":  nil,
+		}).Error
+}
+
+// SetGamePlayers sets the active and passive players for a game
+func (r *TodRepository) SetGamePlayers(gameID uint, activeID, passiveID uint) error {
+	return r.db.Model(&models.TodGame{}).Where("id = ?", gameID).
+		Updates(map[string]interface{}{
+			"active_player_id":  activeID,
+			"passive_player_id": passiveID,
 		}).Error
 }
 

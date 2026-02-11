@@ -17,6 +17,11 @@ func NewUserRepository(db *gorm.DB) *UserRepository {
 	return &UserRepository{db: db}
 }
 
+// WithTx returns a new instance of UserRepository with the transaction
+func (r *UserRepository) WithTx(tx *gorm.DB) *UserRepository {
+	return &UserRepository{db: tx}
+}
+
 // CreateUser creates a new user
 func (r *UserRepository) CreateUser(user *models.User) error {
 	if user.PublicID == "" {
@@ -100,6 +105,11 @@ func (r *UserRepository) UpdateLastActivity(userID uint) error {
 		return errors.Wrap(result.Error, errors.ErrCodeInternalError, "failed to update last activity")
 	}
 	return nil
+}
+
+// UpdateUserInventory updates user's inventory
+func (r *UserRepository) UpdateUserInventory(userID uint, inventory string) error {
+	return r.db.Model(&models.User{}).Where("id = ?", userID).Update("items_inventory", inventory).Error
 }
 
 // UserExists checks if a user exists by Telegram ID
@@ -399,17 +409,32 @@ func (r *UserRepository) MarkInactiveUsersOffline(timeout time.Duration) (int64,
 
 // AddXP adds experience points to a user and handles leveling up
 func (r *UserRepository) AddXP(userID uint, xp int) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var user models.User
+		if err := tx.First(&user, userID).Error; err != nil {
+			return err
+		}
+
+		user.XP += int64(xp)
+		requiredXP := user.GetXPRequired()
+
+		// Level up check
+		for user.XP >= requiredXP {
+			user.XP -= requiredXP
+			user.Level++
+			requiredXP = user.GetXPRequired()
+		}
+
+		return tx.Save(&user).Error
+	})
+}
+
+// AddLeaguePoints adds league points to a user
+func (r *UserRepository) AddLeaguePoints(userID uint, points int) error {
 	result := r.db.Model(&models.User{}).
 		Where("id = ?", userID).
-		Update("xp", gorm.Expr("xp + ?", xp))
-
-	if result.Error != nil {
-		return errors.Wrap(result.Error, errors.ErrCodeInternalError, "failed to add XP")
-	}
-
-	// Simple leveling: level = floor(sqrt(xp/100)) + 1 or similar
-	// For now just update XP. Leveling logic can be added later or triggered here.
-	return nil
+		Update("league_points", gorm.Expr("league_points + ?", points))
+	return result.Error
 }
 
 // GetReferralCount returns the number of users referred by a specific user
@@ -435,4 +460,45 @@ func (r *UserRepository) GetReferredUsers(userID uint, limit int) ([]models.User
 		return nil, errors.Wrap(err, errors.ErrCodeInternalError, "failed to get referred users")
 	}
 	return users, nil
+}
+
+// ResetWeeklyLeagues resets points and updates tiers based on ranking
+func (r *UserRepository) ResetWeeklyLeagues() error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var users []models.User
+		if err := tx.Order("league_points DESC").Find(&users).Error; err != nil {
+			return err
+		}
+
+		total := len(users)
+		if total == 0 {
+			return nil
+		}
+
+		for i, user := range users {
+			percentile := float64(i+1) / float64(total) * 100
+
+			var newTier string
+			switch {
+			case percentile <= 5:
+				newTier = "legend"
+			case percentile <= 15:
+				newTier = "diamond"
+			case percentile <= 30:
+				newTier = "gold"
+			case percentile <= 60:
+				newTier = "silver"
+			default:
+				newTier = "bronze"
+			}
+
+			if err := tx.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
+				"league_tier":   newTier,
+				"league_points": 0,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

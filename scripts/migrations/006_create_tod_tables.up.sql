@@ -149,35 +149,6 @@ CREATE INDEX idx_tod_action_logs_game ON tod_action_logs(game_id);
 CREATE INDEX idx_tod_action_logs_user ON tod_action_logs(user_id);
 CREATE UNIQUE INDEX idx_tod_action_logs_action_id ON tod_action_logs(action_id);
 
--- Seed initial challenges
-INSERT INTO tod_challenges (type, text, difficulty, category, gender_target, relation_level, proof_type, proof_hint, xp_reward, coin_reward) VALUES
--- Easy Truth Questions
-('truth', 'آخرین باری که دروغ گفتی کی بود و چرا؟', 'easy', 'funny', 'all', 'stranger', 'text', 'پاسخ صادقانه بده', 15, 10),
-('truth', 'بدترین خاطره‌ای که از مدرسه داری چیه؟', 'easy', 'funny', 'all', 'friend', 'text', 'یه خاطره واقعی تعریف کن', 15, 10),
-('truth', 'اگه می‌تونستی یه روز با کسی جا عوض کنی، کی بود؟', 'easy', 'funny', 'all', 'stranger', 'text', 'اسم ببر و دلیلش رو بگو', 15, 10),
-('truth', 'خجالت‌آورترین اتفاقی که برات افتاده چی بوده؟', 'easy', 'embarrassing', 'all', 'friend', 'text', 'یه داستان واقعی بگو', 18, 12),
-('truth', 'اگه یه قدرت فوق‌العاده داشتی، چی انتخاب می‌کردی؟', 'easy', 'funny', 'all', 'stranger', 'text', 'قدرت و دلیلش رو بگو', 15, 10),
-
--- Medium Truth Questions
-('truth', 'بزرگترین ترست که داری چیه؟', 'medium', 'embarrassing', 'all', 'friend', 'text', 'صادقانه بگو', 20, 15),
-('truth', 'آخرین باری که گریه کردی کی بود و چرا؟', 'medium', 'romantic', 'all', 'close', 'text', 'داستانش رو بگو', 20, 15),
-('truth', 'اگه فقط یه نفر رو می‌تونستی ببخشی، کی بود؟', 'medium', 'romantic', 'all', 'close', 'text', 'اسم و دلیل', 20, 15),
-
--- Easy Dare Challenges
-('dare', 'یه ویس بفرست و بگو: من سلطان تنبلیام!', 'easy', 'funny', 'all', 'stranger', 'voice', 'ویس بفرست', 20, 15),
-('dare', 'یه سلفی خنده‌دار از خودت بگیر و بفرست', 'easy', 'funny', 'all', 'friend', 'image', 'عکس بفرست', 22, 18),
-('dare', 'یه ویس بفرست و مثل گربه میو کن!', 'easy', 'funny', 'all', 'stranger', 'voice', 'ویس بفرست', 20, 15),
-('dare', 'یه عکس از آخرین چیزی که خوردی بفرست', 'easy', 'funny', 'all', 'stranger', 'image', 'عکس بفرست', 18, 12),
-('dare', 'یه ویس بفرست و یه جوک بگو', 'easy', 'funny', 'all', 'friend', 'voice', 'ویس بفرست', 20, 15),
-
--- Medium Dare Challenges
-('dare', 'یه ویدیو کوتاه از خودت برقص و بفرست', 'medium', 'embarrassing', 'all', 'close', 'video', 'ویدیو بفرست', 30, 25),
-('dare', 'یه عکس سلفی با یه حالت عجیب بگیر', 'medium', 'embarrassing', 'all', 'friend', 'image', 'عکس بفرست', 25, 20),
-('dare', 'یه ویس بفرست و یه آهنگ بخون', 'medium', 'funny', 'all', 'friend', 'voice', 'ویس بفرست', 25, 20),
-
--- Hard Challenges
-('dare', 'یه ویدیو از خودت بفرست که داری یه کار خنده‌دار انجام میدی', 'hard', 'embarrassing', 'all', 'close', 'video', 'ویدیو بفرست', 35, 30),
-('truth', 'بزرگترین رازی که از کسی پنهون کردی چیه؟', 'hard', 'romantic', 'all', 'close', 'text', 'صادقانه بگو', 30, 25);
 
 COMMENT ON TABLE tod_games IS 'Truth or Dare game sessions';
 COMMENT ON TABLE tod_challenges IS 'Truth or Dare challenge questions';
@@ -185,3 +156,4 @@ COMMENT ON TABLE tod_turns IS 'Individual turns in ToD games';
 COMMENT ON TABLE tod_player_stats IS 'Player statistics for ToD games';
 COMMENT ON TABLE tod_judgment_logs IS 'Judgment history for anti-abuse';
 COMMENT ON TABLE tod_action_logs IS 'Action deduplication logs';
+

@@ -37,6 +37,8 @@ type User struct {
 	LastActivity     time.Time `gorm:"default:CURRENT_TIMESTAMP;index;index:idx_user_province_activity;index:idx_user_status_activity"`
 	CreatedAt        time.Time `gorm:"autoCreateTime;index"`
 	UpdatedAt        time.Time `gorm:"autoUpdateTime"`
+	LeaguePoints     int64     `gorm:"default:0;not null;index"`
+	LeagueTier       string    `gorm:"type:varchar(20);default:'bronze';index"`
 	Distance         float64   `gorm:"-"`
 }
 

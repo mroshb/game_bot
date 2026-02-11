@@ -13,6 +13,10 @@ type CoinRepository struct {
 	db *gorm.DB
 }
 
+func (r *CoinRepository) WithTx(tx *gorm.DB) *CoinRepository {
+	return &CoinRepository{db: tx}
+}
+
 func NewCoinRepository(db *gorm.DB) *CoinRepository {
 	return &CoinRepository{db: db}
 }

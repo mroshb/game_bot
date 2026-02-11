@@ -154,6 +154,28 @@ const (
 	BtnAccept         = "✅ قبول"
 	BtnReject         = "❌ رد"
 	BtnBack           = "🔙 بازگشت"
+	BtnAdminPanel     = "🔧 پنل مدیریت"
+	BtnAddQuestion    = "➕ افزودن سوال"
+	BtnViewQuestions  = "📋 مشاهده سوالات"
+	BtnUserManagement = "👥 مدیریت کاربران"
+
+	// Truth or Dare New Buttons
+	BtnTodAnonymous = "🕹 بازی با ناشناس"
+	BtnTodFriends   = "👥 بازی با دوستان"
+	BtnTodRegister  = "✍️ ثبت سوال"
+	BtnTodHelp      = "📜 راهنما"
+	BtnTodGirl      = "👧 بازی با دختر (۱۰ سکه)"
+	BtnTodBoy       = "👦 بازی با پسر (۱۰ سکه)"
+	BtnTodRandom    = "🎲 تصادفی (رایگان)"
+	BtnTodAdvanced  = "⚙️ پیشرفته (۱۵ سکه)"
+	BtnTodTruth     = "🤐 حقیقت"
+	BtnTodTruth18   = "😈 حقیقت +۱۸"
+	BtnTodDare      = "💪 جرات"
+	BtnTodDare18    = "🔥 جرات +۱۸"
+	BtnTodDone      = "✅ پاسخ داد / انجام شد"
+	BtnTodSwap      = "🔄 تغییر سوال (۵ سکه)"
+	BtnTodQuit      = "🚩 انصراف"
+
 	BtnCreateRoom     = "🏛 ساخت روم"
 	BtnSearchRoom     = "🔍 جستجوی روم"
 	BtnRandomMatch    = "🎲 جستجوی تصادفی"
@@ -174,4 +196,17 @@ const (
 	BtnInviteToVillage    = "➕ دعوت به دهکده"
 	BtnVillageChat        = "💬 چت دهکده"
 	BtnVillageGame        = "🎮 بازی دهکده"
+	BtnVillageTreasury    = "💰 خزانه دهکده"
+	BtnVillageBuffs       = "✨ باف‌های دهکده"
+	BtnVillageWar         = "⚔️ جنگ دهکده"
+	BtnDonate             = "💎 اهدای سکه"
+	BtnUpgradeXP          = "✨ ارتقا XP (5%)"
+	BtnUpgradeCoin        = "💰 ارتقا سکه (5%)"
+	BtnUpgradeShield      = "🛡 ارتقا سپر"
+)
+
+const (
+	MsgVillageTreasury = "💰 **خزانه دهکده %s**\n\n💵 موجودی فعلی: %d سکه\n\nبرای ارتقای باف‌ها و شروع جنگ، دهکده نیاز به شارژ خزانه دارد.\n\n👇 می‌توانید به خزانه دهکده کمک کنید:"
+	MsgVillageBuffs    = "✨ **باف‌های فعال دهکده**\n\n📈 افزایش XP: سطح %d (%d%%)\n💰 افزایش سکه: سطح %d (%d%%)\n🛡 سپر دفاعی: سطح %d\n\n💵 موجودی خزانه: %d\n\n👇 ارتقای باف‌ها (هزینه هر ارتقا: %d سکه):"
+	MsgVillageWarInfo  = "⚔️ **وضعیت جنگ دهکده**\n\n%s\n\n👇 عملیات جنگ:"
 )

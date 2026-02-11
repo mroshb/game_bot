@@ -18,6 +18,11 @@ func NewQuizMatchRepository(db *gorm.DB) *QuizMatchRepository {
 	return &QuizMatchRepository{db: db}
 }
 
+// WithTx returns a new instance of QuizMatchRepository with the transaction
+func (r *QuizMatchRepository) WithTx(tx *gorm.DB) *QuizMatchRepository {
+	return &QuizMatchRepository{db: tx}
+}
+
 // CreateQuizMatch creates a new quiz match between two users
 func (r *QuizMatchRepository) CreateQuizMatch(user1ID, user2ID uint) (*models.QuizMatch, error) {
 	timeoutAt := time.Now().Add(time.Duration(models.QuizTimeoutDays) * 24 * time.Hour)

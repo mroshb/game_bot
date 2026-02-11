@@ -410,17 +410,28 @@ func (h *HandlerManager) ShowQuizGameDetail(userID int64, matchID uint, bot BotI
 		keyboard = tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData("🔔 یادآوری", fmt.Sprintf("btn:qnotify_%d", matchID)),
+				tgbotapi.NewInlineKeyboardButtonData("⚖️ برد فنی", fmt.Sprintf("btn:qforce_win_%d", matchID)),
 			),
 			tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData("🔙 بازگشت", "btn:quiz_games"),
 			),
 		)
 	} else {
-		keyboard = tgbotapi.NewInlineKeyboardMarkup(
-			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("🔙 بازگشت", "btn:quiz_games"),
-			),
-		)
+		// Even if not category state, if it's not my turn, I should be able to force win if timeout
+		if !isMyTurn {
+			keyboard = tgbotapi.NewInlineKeyboardMarkup(
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("⚖️ برد فنی", fmt.Sprintf("btn:qforce_win_%d", matchID)),
+					tgbotapi.NewInlineKeyboardButtonData("🔙 بازگشت", "btn:quiz_games"),
+				),
+			)
+		} else {
+			keyboard = tgbotapi.NewInlineKeyboardMarkup(
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("🔙 بازگشت", "btn:quiz_games"),
+				),
+			)
+		}
 	}
 
 	bot.SendMessage(userID, msg, keyboard)

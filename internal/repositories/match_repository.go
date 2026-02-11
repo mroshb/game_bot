@@ -6,6 +6,7 @@ import (
 	"github.com/mroshb/game_bot/internal/models"
 	"github.com/mroshb/game_bot/pkg/errors"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type MatchRepository struct {
@@ -14,6 +15,11 @@ type MatchRepository struct {
 
 func NewMatchRepository(db *gorm.DB) *MatchRepository {
 	return &MatchRepository{db: db}
+}
+
+// WithTx returns a new instance of MatchRepository with the transaction
+func (r *MatchRepository) WithTx(tx *gorm.DB) *MatchRepository {
+	return &MatchRepository{db: tx}
 }
 
 // AddToQueue adds a user to the matchmaking queue
@@ -119,6 +125,101 @@ func (r *MatchRepository) FindMatch(userID uint, filters *models.MatchFilters) (
 	}
 
 	return &matchedUser, nil
+}
+
+// FindAndRemoveMatch atomically finds and removes a match from the queue
+func (r *MatchRepository) FindAndRemoveMatch(searcherID uint, filters *models.MatchFilters) (*models.User, error) {
+	var opponent models.User
+
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		// Get the searching user's info first (outside loop or inside tx, doesn't matter much)
+		// But let's fetch inside tx for consistency
+		var searchingUser models.User
+		if err := tx.First(&searchingUser, searcherID).Error; err != nil {
+			return err
+		}
+
+		// Build query for finding match (similar logic to FindMatch but with SKIP LOCKED)
+		var queueEntry models.MatchmakingQueue
+		query := tx.Table("matchmaking_queue").
+			Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Select("matchmaking_queue.*").
+			Joins("JOIN users ON users.id = matchmaking_queue.user_id").
+			Where("matchmaking_queue.user_id != ?", searcherID)
+
+		// Apply GameType filter
+		if filters.GameType != "" {
+			query = query.Where("matchmaking_queue.game_type = ?", filters.GameType)
+		} else {
+			query = query.Where("matchmaking_queue.game_type = ?", models.GameTypeChat)
+		}
+
+		// Apply filters
+		if filters.Gender != "" && filters.Gender != models.RequestedGenderAny {
+			query = query.Where("users.gender = ?", filters.Gender)
+		}
+
+		if filters.MinAge != nil {
+			query = query.Where("users.age >= ?", *filters.MinAge)
+		}
+
+		if filters.MaxAge != nil {
+			query = query.Where("users.age <= ?", *filters.MaxAge)
+		}
+
+		if filters.City != "" {
+			query = query.Where("(users.city = ? OR matchmaking_queue.city = ?)", filters.City, filters.City)
+		}
+
+		if len(filters.Provinces) > 0 {
+			query = query.Where("users.province IN ?", filters.Provinces)
+		}
+
+		if searchingUser.Province != "" {
+			query = query.Where("(matchmaking_queue.target_provinces = '' OR matchmaking_queue.target_provinces IS NULL OR matchmaking_queue.target_provinces LIKE ?)", "%"+searchingUser.Province+"%")
+		}
+
+		query = query.Where("(matchmaking_queue.requested_gender = ? OR matchmaking_queue.requested_gender = ?)",
+			searchingUser.Gender, models.RequestedGenderAny)
+
+		// Order by creation time (FIFO)
+		query = query.Order("matchmaking_queue.created_at ASC")
+
+		// Execute Find with Lock
+		if err := query.First(&queueEntry).Error; err != nil {
+			// If not found, return specific error or wrap
+			if err == gorm.ErrRecordNotFound {
+				return err // Will be caught outside
+			}
+			return err
+		}
+
+		// Found a match! Get the user details
+		if err := tx.First(&opponent, queueEntry.UserID).Error; err != nil {
+			return err
+		}
+
+		// Remove opponent from queue
+		if err := tx.Delete(&queueEntry).Error; err != nil {
+			return err
+		}
+
+		// Also remove the searcher from queue (since they are now matched)
+		if err := tx.Where("user_id = ?", searcherID).Delete(&models.MatchmakingQueue{}).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil // No match found
+		}
+		return nil, errors.Wrap(err, errors.ErrCodeInternalError, "failed to find and remove match")
+	}
+
+	return &opponent, nil
 }
 
 // CreateMatchSession creates a new match session

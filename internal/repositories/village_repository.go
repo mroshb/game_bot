@@ -1,6 +1,8 @@
 package repositories
 
 import (
+	"time"
+
 	"github.com/mroshb/game_bot/internal/models"
 	"github.com/mroshb/game_bot/pkg/errors"
 	"gorm.io/gorm"
@@ -8,6 +10,10 @@ import (
 
 type VillageRepository struct {
 	db *gorm.DB
+}
+
+func (r *VillageRepository) WithTx(tx *gorm.DB) *VillageRepository {
+	return &VillageRepository{db: tx}
 }
 
 func NewVillageRepository(db *gorm.DB) *VillageRepository {
@@ -137,4 +143,76 @@ func (r *VillageRepository) UpdateVillageStats(villageID uint, level int, xp, sc
 		"xp":    xp,
 		"score": score,
 	}).Error
+}
+
+func (r *VillageRepository) AddToTreasury(villageID uint, amount int64) error {
+	return r.db.Model(&models.Village{}).Where("id = ?", villageID).Update("treasury", gorm.Expr("treasury + ?", amount)).Error
+}
+
+func (r *VillageRepository) UpgradeBuff(villageID uint, buffType string, newLevel int, cost int64) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		field := ""
+		switch buffType {
+		case "xp":
+			field = "buff_xp_level"
+		case "coin":
+			field = "buff_coin_level"
+		case "shield":
+			field = "buff_shield_level"
+		}
+
+		if field == "" {
+			return errors.New(errors.ErrCodeValidationFailed, "invalid buff type")
+		}
+
+		if err := tx.Model(&models.Village{}).Where("id = ?", villageID).Updates(map[string]interface{}{
+			field:      newLevel,
+			"treasury": gorm.Expr("treasury - ?", cost),
+		}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func (r *VillageRepository) CreateWar(war *models.VillageWar) error {
+	return r.db.Create(war).Error
+}
+
+func (r *VillageRepository) GetActiveWar(villageID uint) (*models.VillageWar, error) {
+	var war models.VillageWar
+	err := r.db.Where("(village1_id = ? OR village2_id = ?) AND status = ?", villageID, villageID, models.WarStatusActive).
+		Preload("Village1").Preload("Village2").
+		First(&war).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	return &war, err
+}
+
+func (r *VillageRepository) UpdateWarScore(warID, villageID uint, points int) error {
+	var war models.VillageWar
+	if err := r.db.First(&war, warID).Error; err != nil {
+		return err
+	}
+
+	field := "village1_score"
+	if war.Village2ID == villageID {
+		field = "village2_score"
+	}
+
+	return r.db.Model(&models.VillageWar{}).Where("id = ?", warID).Update(field, gorm.Expr(field+" + ?", points)).Error
+}
+
+func (r *VillageRepository) FinishWar(warID uint, winnerID uint) error {
+	return r.db.Model(&models.VillageWar{}).Where("id = ?", warID).Updates(map[string]interface{}{
+		"status":    models.WarStatusFinished,
+		"winner_id": winnerID,
+	}).Error
+}
+
+func (r *VillageRepository) GetExpiredWars() ([]models.VillageWar, error) {
+	var wars []models.VillageWar
+	err := r.db.Where("status = ? AND end_time < ?", models.WarStatusActive, time.Now()).Find(&wars).Error
+	return wars, err
 }

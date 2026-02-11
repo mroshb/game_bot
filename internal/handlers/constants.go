@@ -109,4 +109,34 @@ const (
 	MsgVillageInviteText    = "🎁 دعوت‌نامه دهکده «%s»\n\nبا کلیک بر روی لینک زیر می‌تونی به دهکده ما بیای:\n%s"
 	MsgVillageJoinSuccess   = "✅ ایول! تو با موفقیت به دهکده «%s» پیوستی."
 	MsgVillageChatNote      = "📝 پیام‌های شما در دهکده ارسال می‌شود. برای خروج /cancel بزنید یا از دکمه‌های منو استفاده کنید."
+
+	BtnVillageTreasury = "💰 خزانه دهکده"
+	BtnVillageBuffs    = "✨ باف‌های دهکده"
+	BtnVillageWar      = "⚔️ جنگ دهکده"
+
+	MsgVillageTreasury = "💰 **خزانه دهکده %s**\n\n💵 موجودی فعلی: %d سکه\n\nبرای ارتقای باف‌ها و شروع جنگ، دهکده نیاز به شارژ خزانه دارد.\n\n👇 می‌توانید به خزانه دهکده کمک کنید:"
+	MsgVillageBuffs    = "✨ **باف‌های فعال دهکده**\n\n📈 افزایش XP: سطح %d (%d%%)\n💰 افزایش سکه: سطح %d (%d%%)\n🛡 سپر دفاعی: سطح %d\n\n💵 موجودی خزانه: %d\n\n👇 ارتقای باف‌ها (هزینه هر ارتقا: %d سکه):"
+	MsgVillageWarInfo  = "⚔️ **وضعیت جنگ دهکده**\n\n%s\n\n👇 عملیات جنگ:"
+
+	// Truth or Dare New Buttons
+	BtnTodAnonymous = "🕹 بازی با ناشناس"
+	BtnTodFriends   = "👥 بازی با دوستان"
+	BtnTodRegister  = "✍️ ثبت سوال"
+	BtnTodHelp      = "📜 راهنما"
+	BtnTodGirl      = "👧 بازی با دختر (۱۰ سکه)"
+	BtnTodBoy       = "👦 بازی با پسر (۱۰ سکه)"
+	BtnTodRandom    = "🎲 تصادفی (رایگان)"
+	BtnTodAdvanced  = "⚙️ پیشرفته (۱۵ سکه)"
+	BtnTodTruth     = "🤐 حقیقت"
+	BtnTodTruth18   = "😈 حقیقت +۱۸"
+	BtnTodDare      = "💪 جرات"
+	BtnTodDare18    = "🔥 جرات +۱۸"
+	BtnTodDone      = "✅ پاسخ داد / انجام شد"
+	BtnTodSwap      = "🔄 تغییر سوال (۵ سکه)"
+	BtnTodQuit      = "🚩 انصراف"
+
+	MsgErrorGeneric      = "❌ متاسفانه خطایی رخ داده است. لطفاً دوباره تلاش کنید."
+	MsgInsufficientCoins = "⚠️ سکه کافی نداری! موجودی فعلی: %d"
+	MsgAlreadySearching  = "🔍 شما در حال حاضر در صف انتظار هستید."
+	MsgAlreadyInMatch    = "⚠️ شما در حال حاضر در یک بازی فعال هستید."
 )

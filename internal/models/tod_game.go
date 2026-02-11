@@ -44,6 +44,7 @@ const (
 	TodStateWaitingChoice   = "waiting_choice"
 	TodStateWaitingProof    = "waiting_proof"
 	TodStateWaitingJudgment = "waiting_judgment"
+	TodStateWaitingAppeal   = "waiting_appeal"
 	TodStateForfeit         = "forfeit"
 	TodStateGameEnd         = "game_end"
 )

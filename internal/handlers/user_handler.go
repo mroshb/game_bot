@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 	"time"
@@ -34,8 +35,18 @@ type BotInterface interface {
 	GetAPI() interface{}
 	AnswerCallbackQuery(queryID string, text string, showAlert bool)
 	GetVillageHubKeyboard(hasVillage bool) interface{}
+	GetVillageTreasuryKeyboard() interface{}
+	GetVillageBuffsKeyboard(isLeader bool) interface{}
+	GetVillageWarKeyboard(isLeader bool, hasActiveWar bool) interface{}
 	GetCancelKeyboard() interface{}
 	EditMessageReplyMarkup(chatID int64, messageID int, keyboard interface{})
+
+	// Truth or Dare Keyboards
+	GetTodAnonymousFilterKeyboard() interface{}
+	GetTodChallengeTypeKeyboard(gameID uint) interface{}
+	GetTodResponderInteractionKeyboard(gameID uint) interface{}
+	GetTodQuestionerInteractionKeyboard(gameID uint) interface{}
+	GetTodGroupLobbyKeyboard(sessionID uint, isHost bool) interface{}
 }
 
 type UserSession struct {
@@ -328,6 +339,11 @@ func (h *HandlerManager) completeRegistration(userID int64, session *UserSession
 	bot.SendMessage(userID, welcomeMsg, nil)
 	bot.SendMainMenu(userID, user.TelegramID == h.Config.SuperAdminTgID)
 
+	// Handle pending village join
+	if pendingVID, ok := session.Data["pending_vjoin"].(uint); ok && pendingVID > 0 {
+		h.JoinVillageByID(userID, pendingVID, bot)
+	}
+
 }
 
 func (h *HandlerManager) ShowProfile(userID int64, user *models.User, bot BotInterface) {
@@ -369,10 +385,28 @@ func (h *HandlerManager) ShowProfile(userID int64, user *models.User, bot BotInt
 	// Member since
 	joinDate := user.CreatedAt.Format("2006/01/02")
 
+	// League Tier
+	tierIcons := map[string]string{
+		"bronze":  "🥉 برنزی",
+		"silver":  "🥈 نقره‌ای",
+		"gold":    "🥇 طلایی",
+		"diamond": "💎 الماسی",
+		"legend":  "👑 افسانه",
+	}
+	tierName := tierIcons[user.LeagueTier]
+	if tierName == "" {
+		tierName = "🥉 برنزی"
+	}
+
+	// Achievements
+	achievements := getAchievements(user)
+
 	// Profile Card Format
-	profileText := fmt.Sprintf(`👤 پروفایل کاربری: %s
+	profileText := fmt.Sprintf(`👤 پروفایل کاربری: %s %s
 ➖➖➖➖➖➖➖➖
-🏅 سطح: [%d] (رتبه: %s)
+🏅 سطح: [%d] (%s)
+🏆 لیگ: [%s] (%d امتیاز)
+🎗 نشان‌ها: %s
 📈 تجربه: %d/%d XP
 %s %d%%
 
@@ -387,8 +421,12 @@ func (h *HandlerManager) ShowProfile(userID int64, user *models.User, bot BotInt
 🎒 موجودی آیتمها:
 %s`,
 		user.FullName,
+		user.GetLevelTitle(),
 		user.Level,
 		user.GetLevelTitle(),
+		tierName,
+		user.LeaguePoints,
+		achievements,
 		user.XP,
 		requiredXP,
 		user.GetXPBar(),
@@ -480,7 +518,7 @@ func (h *HandlerManager) HandleDailyBonus(userID int64, queryID string, bot BotI
 				diff := nextAvailable.Sub(now)
 				hours := int(diff.Hours())
 				minutes := int(diff.Minutes()) % 60
-				msg := fmt.Sprintf("⏳ هنوز وقتش نشده! %d ساعت و %d دقیقه دیگه بیا.", hours, minutes)
+				msg := fmt.Sprintf("⏳ هنوز وقتش نشده رفیق!\n\n🕒 %d ساعت و %d دقیقه دیگه بیا تا دوباره گردونه رو بچرخونی. 😉", hours, minutes)
 
 				if queryID != "" {
 					bot.AnswerCallbackQuery(queryID, msg, true)
@@ -495,8 +533,6 @@ func (h *HandlerManager) HandleDailyBonus(userID int64, queryID string, bot BotI
 	// Calculate streak
 	isStreak := false
 	if !user.LastDailyBonus.IsZero() {
-		// If last claim was yesterday (YearDay check handles Jan 1st? Not really if year changed, but simple for now)
-		// Better: diff < 48 hours
 		if now.Sub(user.LastDailyBonus) < 48*time.Hour {
 			isStreak = true
 		}
@@ -508,21 +544,71 @@ func (h *HandlerManager) HandleDailyBonus(userID int64, queryID string, bot BotI
 		user.DailyBonusStreak = 1
 	}
 
-	bonusAmount := int64(40 + (user.DailyBonusStreak * 10)) // Day 1: 50, Day 2: 60...
-	if bonusAmount > 200 {
-		bonusAmount = 200 // Cap bonus
-	}
-
-	user.CoinBalance += bonusAmount
+	// Update last claim early to prevent race conditions during animation
 	user.LastDailyBonus = now
 	h.UserRepo.UpdateUser(user)
 
-	// Record transaction
-	h.CoinRepo.AddCoins(user.ID, bonusAmount, models.TxTypeDailyBonus, fmt.Sprintf("جایزه روزانه (روز %d)", user.DailyBonusStreak))
+	// Animation Sequence
+	msgID := bot.SendMessage(userID, "🎰 در حال چرخاندن گردونه شانس...", nil)
 
-	bot.SendMessage(userID, fmt.Sprintf("🎁 تبریک! %d سکه امروزت رو گرفتی. فردا بیا تا %d تا بگیری!", bonusAmount, bonusAmount+10), nil)
+	go func() {
+		time.Sleep(1200 * time.Millisecond)
+		bot.EditMessage(userID, msgID, "🎰 [ 💰 | 🎁 | 💎 ]", nil)
+		time.Sleep(1200 * time.Millisecond)
+		bot.EditMessage(userID, msgID, "🎰 [ ✨ | 💰 | ✨ ]", nil)
+		time.Sleep(1000 * time.Millisecond)
+
+		// Randomize Reward
+		rand.Seed(time.Now().UnixNano())
+		r := rand.Intn(100)
+		var resultMsg string
+		var bonusAmount int64
+		var xpAmount int
+
+		if r < 70 {
+			// 70% chance: Coins
+			bonusAmount = int64(50 + rand.Intn(100) + (user.DailyBonusStreak * 5))
+			xpAmount = 10 + (user.DailyBonusStreak * 2)
+			if bonusAmount > 250 {
+				bonusAmount = 250
+			}
+			h.CoinRepo.AddCoins(user.ID, bonusAmount, models.TxTypeDailyBonus, fmt.Sprintf("جایزه روزانه (روز %d)", user.DailyBonusStreak))
+			resultMsg = fmt.Sprintf("🎁 تبریک! گردونه روی %d سکه ایستاد! 💰\n\n🔥 پشتکار عالیه! روز %d متوالی هست که میای.\n🎭 تجربه کسب شده: +%d XP", bonusAmount, user.DailyBonusStreak, xpAmount)
+		} else if r < 90 {
+			// 20% chance: Item
+			xpAmount = 20 + (user.DailyBonusStreak * 2)
+			items := []string{"shield", "swap"}
+			chosenItem := items[rand.Intn(len(items))]
+			itemNames := map[string]string{"shield": "🛡 سپر فرار", "swap": "🔄 کارت تعویض"}
+
+			// Add item to inventory
+			var itemsMap map[string]int
+			json.Unmarshal([]byte(user.ItemsInventory), &itemsMap)
+			if itemsMap == nil {
+				itemsMap = make(map[string]int)
+			}
+			itemsMap[chosenItem]++
+			newInventory, _ := json.Marshal(itemsMap)
+			// Use specialized update to avoid overwriting coins
+			h.UserRepo.UpdateUserInventory(user.ID, string(newInventory))
+
+			resultMsg = fmt.Sprintf("🎉 ایول! از گردونه یک آیتم برنده شدی: %s 🎒\n\nاین آیتم به کوله‌پشتیت اضافه شد.\n🎭 تجربه کسب شده: +%d XP", itemNames[chosenItem], xpAmount)
+		} else {
+			// 10% chance: Jackpot
+			bonusAmount = int64(300 + rand.Intn(200))
+			xpAmount = 50 + (user.DailyBonusStreak * 5)
+			h.CoinRepo.AddCoins(user.ID, bonusAmount, models.TxTypeDailyBonus, "جک‌پات روزانه! 🎰")
+			resultMsg = fmt.Sprintf("🎊 وااااای! جک‌پات زدی! 🎰\n\n💰 مقدار %d سکه به حسابت اضافه شد! امروز روز شانسته!\n🎭 تجربه کسب شده: +%d XP", bonusAmount, xpAmount)
+		}
+
+		// Award XP
+		h.UserRepo.AddXP(user.ID, xpAmount)
+
+		bot.EditMessage(userID, msgID, resultMsg, nil)
+	}()
+
 	if queryID != "" {
-		bot.AnswerCallbackQuery(queryID, "✅ جایزه با موفقیت دریافت شد!", false)
+		bot.AnswerCallbackQuery(queryID, "✅ گردونه در حال چرخش...", false)
 	}
 }
 
@@ -1117,11 +1203,56 @@ func (h *HandlerManager) ShowReferralStats(userID int64, bot BotInterface) {
 		message += "هنوز کسی را دعوت نکرده‌اید!\n\nلینک دعوت خود را با دوستانتان به اشتراک بگذارید."
 	}
 
+	// Create invite link
+	botUser, _ := bot.GetAPI().(*tgbotapi.BotAPI).GetMe()
+	inviteLink := fmt.Sprintf("https://t.me/%s?start=ref_%d", botUser.UserName, userID)
+
+	message += fmt.Sprintf("\n\n🔗 لینک اختصاصی شما:\n%s", inviteLink)
+
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔗 دریافت لینک دعوت", "btn:"+BtnReferral),
+			tgbotapi.NewInlineKeyboardButtonURL("📤 اشتراک‌گذاری با دوستان", fmt.Sprintf("https://t.me/share/url?url=%s&text=%s", inviteLink, "کلی بازی و چت باحال! بیا دهکده ما 🎮")),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 بازگشت", "btn:"+BtnBack),
 		),
 	)
 
 	bot.SendMessage(userID, message, keyboard)
+}
+
+// Helper function to get achievements
+func getAchievements(user *models.User) string {
+	var badges []string
+	if user.Level >= 50 {
+		badges = append(badges, "🧙‍♂️ استاد اعظم")
+	} else if user.Level >= 20 {
+		badges = append(badges, "🧛 حرفه‌ای")
+	} else if user.Level >= 10 {
+		badges = append(badges, "🎖 باتجربه")
+	}
+
+	if user.Wins >= 500 {
+		badges = append(badges, "⚔️ جنگجو")
+	} else if user.Wins >= 100 {
+		badges = append(badges, "🗡 شمشیرزن")
+	}
+
+	if user.CoinBalance >= 10000 {
+		badges = append(badges, "💰 مایه دار")
+	} else if user.CoinBalance >= 5000 {
+		badges = append(badges, "💵 پولدار")
+	}
+
+	switch user.LeagueTier {
+	case "legend":
+		badges = append(badges, "👑 افسانه")
+	case "diamond":
+		badges = append(badges, "💎 الماس")
+	}
+
+	if len(badges) == 0 {
+		return "🎗 تازه‌کار"
+	}
+	return strings.Join(badges, " | ")
 }

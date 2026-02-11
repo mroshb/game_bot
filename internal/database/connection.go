@@ -17,7 +17,7 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 
 	var logLevel gormlogger.LogLevel
 	if cfg.AppEnv == "development" {
-		logLevel = gormlogger.Info
+		logLevel = gormlogger.Warn
 	} else {
 		logLevel = gormlogger.Error
 	}
@@ -102,6 +102,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.QuizRound{},
 		&models.QuizAnswer{},
 		&models.UserBooster{},
+		&models.VillageWar{},
 	)
 
 	if err != nil {
@@ -212,28 +213,79 @@ func SeedQuestions(db *gorm.DB) error {
 func SeedTodChallenges(db *gorm.DB) error {
 	logger.Info("Checking for Truth or Dare challenges...")
 
-	var count int64
-	db.Model(&models.TodChallenge{}).Count(&count)
-	if count > 0 {
-		return nil
-	}
-
-	logger.Info("Seeding initial Truth or Dare challenges...")
 	challenges := []models.TodChallenge{
-		// Truth Questions
-		{Type: "truth", Text: "آخرین باری که دروغ گفتی کی بود و چرا؟", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "stranger", ProofType: "text", XPReward: 15, CoinReward: 10},
-		{Type: "truth", Text: "بدترین خاطره‌ای که از مدرسه داری چیه؟", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "friend", ProofType: "text", XPReward: 15, CoinReward: 10},
-		{Type: "truth", Text: "خجالت‌آورترین اتفاقی که برات افتاده چی بوده؟", Difficulty: "easy", Category: "embarrassing", GenderTarget: "all", RelationLevel: "friend", ProofType: "text", XPReward: 18, CoinReward: 12},
-		{Type: "truth", Text: "بزرگترین ترست که داری چیه؟", Difficulty: "medium", Category: "embarrassing", GenderTarget: "all", RelationLevel: "friend", ProofType: "text", XPReward: 20, CoinReward: 15},
-		{Type: "truth", Text: "بزرگترین رازی که از کسی پنهون کردی چیه؟", Difficulty: "hard", Category: "romantic", GenderTarget: "all", RelationLevel: "close", ProofType: "text", XPReward: 30, CoinReward: 25},
+		// --- TRUTH: FUNNY (EASY) ---
+		{Type: "truth", Text: "آخرین باری که ضایع شدی کی بود؟ تعریف کن.", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 15, CoinReward: 10},
+		{Type: "truth", Text: "اگه مجبور باشی اسم خودت رو عوض کنی، چی میذاری؟", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 15, CoinReward: 10},
+		{Type: "truth", Text: "توی حموم آواز میخونی؟ اگه آره، چه آهنگی؟", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 15, CoinReward: 10},
+		{Type: "truth", Text: "چه غذایی رو حاضری تا آخر عمرت هر روز بخوری؟", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 15, CoinReward: 10},
+		{Type: "truth", Text: "مسخره‌ترین خوابی که دیدی چی بوده؟", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 15, CoinReward: 10},
 
-		// Dare Challenges
-		{Type: "dare", Text: "یه ویس بفرست و بگو: من سلطان تنبلیام!", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "stranger", ProofType: "voice", XPReward: 20, CoinReward: 15},
-		{Type: "dare", Text: "یه سلفی خنده‌دار از خودت بگیر و بفرست", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "friend", ProofType: "image", XPReward: 22, CoinReward: 18},
-		{Type: "dare", Text: "یه ویس بفرست و مثل گربه میو کن!", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "stranger", ProofType: "voice", XPReward: 20, CoinReward: 15},
-		{Type: "dare", Text: "یه ویدیو کوتاه از خودت برقص و بفرست", Difficulty: "medium", Category: "embarrassing", GenderTarget: "all", RelationLevel: "close", ProofType: "video", XPReward: 30, CoinReward: 25},
-		{Type: "dare", Text: "یه عکس سلفی با یه حالت عجیب بگیر", Difficulty: "medium", Category: "embarrassing", GenderTarget: "all", RelationLevel: "friend", ProofType: "image", XPReward: 25, CoinReward: 20},
+		// --- TRUTH: EMBARRASSING (MEDIUM) ---
+		{Type: "truth", Text: "بدترین نمره‌ای که توی مدرسه گرفتی چند بوده؟", Difficulty: "medium", Category: "embarrassing", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 20, CoinReward: 15},
+		{Type: "truth", Text: "آخرین باری که گریه کردی کی بود و چرا؟", Difficulty: "medium", Category: "embarrassing", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 20, CoinReward: 15},
+		{Type: "truth", Text: "تا حالا سعی کردی کسی رو تحت تاثیر قرار بدی و خرابکاری کنی؟", Difficulty: "medium", Category: "embarrassing", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 20, CoinReward: 15},
+		{Type: "truth", Text: "اگه بتونی یک ویژگی ظاهریت رو عوض کنی، اون چیه؟", Difficulty: "medium", Category: "embarrassing", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 20, CoinReward: 15},
+		{Type: "truth", Text: "تا حالا جلوی آینه با خودت حرف زدی؟ چی گفتی؟", Difficulty: "medium", Category: "embarrassing", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 20, CoinReward: 15},
+
+		// --- TRUTH: DEEP/PERSONAL (HARD) ---
+		{Type: "truth", Text: "بزرگترین حسرت زندگیت چیه؟", Difficulty: "hard", Category: "deep", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 30, CoinReward: 25},
+		{Type: "truth", Text: "اگه بدونی فردا دنیا تموم میشه، امروز چیکار میکنی؟", Difficulty: "hard", Category: "deep", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 30, CoinReward: 25},
+		{Type: "truth", Text: "یک رازی که تا حالا به هیچکس نگفتی رو بگو.", Difficulty: "hard", Category: "deep", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 35, CoinReward: 30},
+		{Type: "truth", Text: "اگه بتونی به گذشته برگردی، چه چیزی رو تغییر میدی؟", Difficulty: "hard", Category: "deep", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 30, CoinReward: 25},
+		{Type: "truth", Text: "چه چیزی بیشتر از همه تو رو میترسونه؟", Difficulty: "hard", Category: "deep", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 30, CoinReward: 25},
+		{Type: "truth", Text: "آیا تا حالا به کسی خیانت کردی؟ (عاطفی یا ...) تعریف کن.", Difficulty: "hard", Category: "deep", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 40, CoinReward: 35},
+		{Type: "truth", Text: "بدترین فانتزی‌ای که در مورد کسی داشتی چی بوده؟", Difficulty: "hard", Category: "hot", GenderTarget: "all", RelationLevel: "close", ProofType: "text", XPReward: 45, CoinReward: 40},
+
+		// --- TRUTH: FLIRTY/ROMANTIC (VARIES) ---
+		{Type: "truth", Text: "جذاب‌ترین ویژگی جنس مخالف از نظرت چیه؟", Difficulty: "medium", Category: "romantic", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 25, CoinReward: 20},
+		{Type: "truth", Text: "اولین کراشت کی بود؟ (اسم نبر، توصیف کن)", Difficulty: "medium", Category: "romantic", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 25, CoinReward: 20},
+		{Type: "truth", Text: "به نظرت عشق در نگاه اول وجود داره؟", Difficulty: "easy", Category: "romantic", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 15, CoinReward: 10},
+		{Type: "truth", Text: "بدترین دیت (قرار) عاشقانه‌ای که رفتی چطور بود؟", Difficulty: "hard", Category: "romantic", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 30, CoinReward: 25},
+		{Type: "truth", Text: "اگه بخوای مخ کسی رو بزنی، جمله‌ی اولت چیه؟", Difficulty: "medium", Category: "romantic", GenderTarget: "all", RelationLevel: "all", ProofType: "text", XPReward: 25, CoinReward: 20},
+
+		// --- DARE: FUNNY (EASY) ---
+		{Type: "dare", Text: "یه ویس ۱ دقیقه بفرست و فقط صدای حیوانات دربیار!", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "all", ProofType: "voice", XPReward: 20, CoinReward: 15},
+		{Type: "dare", Text: "یه سلفی با قیافه کج و کوله (شکلک) بگیر بفرست.", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "friend", ProofType: "image", XPReward: 22, CoinReward: 18},
+		{Type: "dare", Text: "یه جوک خیلی بی‌مزه تعریف کن (ویس).", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "all", ProofType: "voice", XPReward: 20, CoinReward: 15},
+		{Type: "dare", Text: "با دست مخالف اسمت رو روی کاغذ بنویس و عکس بفرست.", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "all", ProofType: "image", XPReward: 22, CoinReward: 18},
+		{Type: "dare", Text: "یه شعر کودکانه (مثل یه توپ دارم قلقلیه) رو با صدای اپرا بخون!", Difficulty: "easy", Category: "funny", GenderTarget: "all", RelationLevel: "all", ProofType: "voice", XPReward: 25, CoinReward: 20},
+
+		// --- DARE: PHYSICAL/ACTIVE (MEDIUM) ---
+		{Type: "dare", Text: "۱۰ تا شنا برو و ویدیو بگیر.", Difficulty: "medium", Category: "physical", GenderTarget: "all", RelationLevel: "all", ProofType: "video", XPReward: 30, CoinReward: 25},
+		{Type: "dare", Text: "یه لیوان آب رو یک نفس سر بکش (ویدیو).", Difficulty: "medium", Category: "physical", GenderTarget: "all", RelationLevel: "all", ProofType: "video", XPReward: 30, CoinReward: 25},
+		{Type: "dare", Text: "یه دقیقه پلانک نگه دار (ویدیو).", Difficulty: "medium", Category: "physical", GenderTarget: "all", RelationLevel: "all", ProofType: "video", XPReward: 35, CoinReward: 30},
+		{Type: "dare", Text: "با چشم بسته یه نقاشی بکش و عکسش رو بفرست.", Difficulty: "medium", Category: "physical", GenderTarget: "all", RelationLevel: "all", ProofType: "image", XPReward: 25, CoinReward: 20},
+		{Type: "dare", Text: "یه قاشق سس تند (یا چیز بد مزه) بخور!", Difficulty: "medium", Category: "physical", GenderTarget: "all", RelationLevel: "all", ProofType: "video", XPReward: 35, CoinReward: 30},
+
+		// --- DARE: SOCIAL/BRAVE (HARD) ---
+		{Type: "dare", Text: "به آخرین نفری که بهت پیام داده زنگ بزن و فقط میو کن! (اسکرین شات)", Difficulty: "hard", Category: "social", GenderTarget: "all", RelationLevel: "all", ProofType: "image", XPReward: 40, CoinReward: 35},
+		{Type: "dare", Text: "یه استوری بذار و بنویس 'من عاشق شلغمم' (اسکرین شات).", Difficulty: "hard", Category: "social", GenderTarget: "all", RelationLevel: "all", ProofType: "image", XPReward: 45, CoinReward: 40},
+		{Type: "dare", Text: "به دوست صمیمیت پیام بده و الکی بگو 'من دارم ازدواج میکنم' (اسکرین شات).", Difficulty: "hard", Category: "social", GenderTarget: "all", RelationLevel: "all", ProofType: "image", XPReward: 50, CoinReward: 45},
+		{Type: "dare", Text: "عکس پروفایلت رو به عکس یه سیب‌زمینی تغییر بده (اسکرین).", Difficulty: "hard", Category: "social", GenderTarget: "all", RelationLevel: "all", ProofType: "image", XPReward: 40, CoinReward: 35},
+		{Type: "dare", Text: "یه آواز بلند بخون و ویس بگیر (بدون خجالت!).", Difficulty: "hard", Category: "social", GenderTarget: "all", RelationLevel: "all", ProofType: "voice", XPReward: 35, CoinReward: 30},
+		{Type: "dare", Text: "یه ویدیو ۱۰ ثانیه‌ای بفرست که داری مثل میمون بالا پایین میپری!", Difficulty: "hard", Category: "funny", GenderTarget: "all", RelationLevel: "all", ProofType: "video", XPReward: 50, CoinReward: 40},
+		{Type: "dare", Text: "یه اسکرین‌شات از هیستوری مرورگرت (۳ تای آخر) بفرست.", Difficulty: "hard", Category: "embarrassing", GenderTarget: "all", RelationLevel: "close", ProofType: "image", XPReward: 45, CoinReward: 35},
+
+		// --- GENDER SPECIFIC ---
+		{Type: "truth", Text: "اگه میتونستی یه روز جای یه مرد باشی، اولین کاری که میکردی چی بود؟", Difficulty: "medium", Category: "funny", GenderTarget: "female", RelationLevel: "all", ProofType: "text", XPReward: 20, CoinReward: 15},
+		{Type: "truth", Text: "بزرگترین دغدغه‌ی دختر بودن از نظرت چیه؟", Difficulty: "hard", Category: "deep", GenderTarget: "female", RelationLevel: "all", ProofType: "text", XPReward: 30, CoinReward: 25},
+		{Type: "dare", Text: "یه ویس بفرست و با صدای نازک (دخترونه) یه جمله قصار بگو!", Difficulty: "medium", Category: "funny", GenderTarget: "male", RelationLevel: "all", ProofType: "voice", XPReward: 25, CoinReward: 20},
+		{Type: "dare", Text: "ادای یه خانم که داره آرایش میکنه رو دربیار و ویدیو بگیر.", Difficulty: "hard", Category: "funny", GenderTarget: "male", RelationLevel: "all", ProofType: "video", XPReward: 40, CoinReward: 30},
+		{Type: "truth", Text: "سخت‌ترین قسمت مرد بودن چیه؟", Difficulty: "hard", Category: "deep", GenderTarget: "male", RelationLevel: "all", ProofType: "text", XPReward: 30, CoinReward: 25},
 	}
 
-	return db.Create(&challenges).Error
+	for _, c := range challenges {
+		var existing models.TodChallenge
+		// Check by text and type to avoid duplicates
+		if err := db.Where("text = ? AND type = ?", c.Text, c.Type).First(&existing).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				if err := db.Create(&c).Error; err != nil {
+					logger.Error("Failed to seed ToD challenge", "text", c.Text, "error", err)
+				}
+			}
+		}
+	}
+
+	return nil
 }

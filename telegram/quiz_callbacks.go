@@ -116,6 +116,14 @@ func (b *Bot) HandleQuizCallbacks(query *tgbotapi.CallbackQuery, data string) bo
 		return true
 	}
 
+	// Force win claim
+	if strings.HasPrefix(cmd, "qforce_win_") {
+		var matchID uint
+		fmt.Sscanf(cmd, "qforce_win_%d", &matchID)
+		b.handlers.HandleQuizForceWin(userID, matchID, b)
+		return true
+	}
+
 	// Legacy/Old Quiz Callbacks
 	if strings.HasPrefix(cmd, "quiz_") && !strings.HasPrefix(cmd, "quiz_games") {
 		var matchID uint

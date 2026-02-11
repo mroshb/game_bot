@@ -8,6 +8,8 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/mroshb/game_bot/internal/models"
 	"github.com/mroshb/game_bot/pkg/logger"
+	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 // HandleTodCallbacks handles all Truth or Dare related callbacks
@@ -19,8 +21,14 @@ func (b *Bot) HandleTodCallbacks(query *tgbotapi.CallbackQuery, data string) boo
 		parts := strings.Split(data, "_")
 
 		switch {
-		case data == "btn:tod_new_game":
+		case data == "btn:tod_new_game", data == "btn:tod_anonymous_menu":
+			b.api.Send(tgbotapi.NewCallback(query.ID, ""))
 			b.handlers.StartTodMatchmaking(userID, b)
+			return true
+
+		case strings.HasPrefix(data, "btn:tod_filter_"):
+			filter := strings.TrimPrefix(data, "btn:tod_filter_")
+			b.handlers.HandleTodFiltering(userID, filter, b)
 			b.api.Send(tgbotapi.NewCallback(query.ID, ""))
 			return true
 
@@ -82,18 +90,13 @@ func (b *Bot) HandleTodCallbacks(query *tgbotapi.CallbackQuery, data string) boo
 
 		case strings.HasPrefix(data, "btn:tod_judge_"):
 			// Format: btn:tod_judge_{gameID}_{result}
-			// After split: ["btn:tod", "judge", "{gameID}", "{result}"]
 			if len(parts) >= 4 {
 				gameIDStr := parts[2]
 				result := parts[3]
-				gameID, err := strconv.ParseUint(gameIDStr, 10, 32)
-				if err != nil {
-					logger.Error("Invalid game ID", "data", data, "error", err)
-					return true
-				}
+				gameID, _ := strconv.ParseUint(gameIDStr, 10, 32)
 				b.handlers.HandleTodJudgment(userID, uint(gameID), result, b)
-				b.api.Send(tgbotapi.NewCallback(query.ID, ""))
 			}
+			b.api.Send(tgbotapi.NewCallback(query.ID, ""))
 			return true
 
 		case strings.HasPrefix(data, "btn:tod_items_"):
@@ -145,6 +148,17 @@ func (b *Bot) HandleTodCallbacks(query *tgbotapi.CallbackQuery, data string) boo
 			b.api.Send(tgbotapi.NewCallback(query.ID, "تلنگر ارسال شد!"))
 			return true
 
+		case strings.HasPrefix(data, "btn:tod_force_win_"):
+			gameIDStr := strings.TrimPrefix(data, "btn:tod_force_win_")
+			gameID, err := strconv.ParseUint(gameIDStr, 10, 32)
+			if err != nil {
+				logger.Error("Invalid game ID", "data", data)
+				return true
+			}
+			b.handlers.HandleTodForceWin(userID, uint(gameID), b)
+			b.api.Send(tgbotapi.NewCallback(query.ID, ""))
+			return true
+
 		case strings.HasPrefix(data, "btn:tod_back_"):
 			gameIDStr := strings.TrimPrefix(data, "btn:tod_back_")
 			gameID, err := strconv.ParseUint(gameIDStr, 10, 32)
@@ -157,8 +171,35 @@ func (b *Bot) HandleTodCallbacks(query *tgbotapi.CallbackQuery, data string) boo
 			return true
 
 		case strings.HasPrefix(data, "btn:tod_chat_"):
-			// Limited chat feature (future implementation)
-			b.api.Send(tgbotapi.NewCallback(query.ID, "این قابلیت به زودی اضافه می‌شود!"))
+			gameIDStr := strings.TrimPrefix(data, "btn:tod_chat_")
+			gameID, _ := strconv.ParseUint(gameIDStr, 10, 32)
+			b.handlers.HandleTodChat(userID, uint(gameID), b)
+			b.api.Send(tgbotapi.NewCallback(query.ID, ""))
+			return true
+
+		case strings.HasPrefix(data, "btn:tod_adm_app_"):
+			// Format: btn:tod_adm_app_{gameID}_{turnID}_{result}
+			if len(parts) >= 6 {
+				gameID, _ := strconv.ParseUint(parts[3], 10, 32)
+				turnID, _ := strconv.ParseUint(parts[4], 10, 32)
+				result := parts[5]
+				b.handlers.HandleTodAdminAppeal(userID, uint(gameID), uint(turnID), result, b)
+			}
+			b.api.Send(tgbotapi.NewCallback(query.ID, "نتیجه ثبت شد"))
+			return true
+
+		case strings.HasPrefix(data, "btn:tod_appeal_"):
+			gameIDStr := strings.TrimPrefix(data, "btn:tod_appeal_")
+			gameID, _ := strconv.ParseUint(gameIDStr, 10, 32)
+			b.handlers.HandleTodAppeal(userID, uint(gameID), b)
+			b.api.Send(tgbotapi.NewCallback(query.ID, "اعتراض شما ثبت شد"))
+			return true
+
+		case strings.HasPrefix(data, "btn:tod_next_round_"):
+			gameIDStr := strings.TrimPrefix(data, "btn:tod_next_round_")
+			gameID, _ := strconv.ParseUint(gameIDStr, 10, 32)
+			b.handlers.HandleTodNextRound(userID, uint(gameID), b)
+			b.api.Send(tgbotapi.NewCallback(query.ID, ""))
 			return true
 		}
 	}
@@ -192,37 +233,51 @@ func (b *Bot) HandleTodMessages(message *tgbotapi.Message) bool {
 
 // StartTodBackgroundJobs starts background jobs for ToD game management
 func (b *Bot) StartTodBackgroundJobs() {
-	// Warning job (runs every 10 seconds)
+	// Use a silent database session for background jobs to reduce log noise
+	silentDB := b.db.Session(&gorm.Session{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	todRepo := b.handlers.TodRepo.WithTx(silentDB)
+
+	// Warning job (runs every 30 seconds)
 	go func() {
-		ticker := time.NewTicker(10 * time.Second)
+		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 
-		for range ticker.C {
-			games, err := b.handlers.TodRepo.GetGamesNearingTimeout()
-			if err != nil {
-				continue
-			}
+		for {
+			select {
+			case <-b.ctx.Done():
+				return
+			case <-ticker.C:
+				games, err := todRepo.GetGamesNearingTimeout()
+				if err != nil {
+					continue
+				}
 
-			for _, game := range games {
-				b.handlers.SendTodWarning(game.ID, b)
-				b.handlers.TodRepo.MarkWarningShown(game.ID)
+				for _, game := range games {
+					b.handlers.SendTodWarning(game.ID, b)
+					todRepo.MarkWarningShown(game.ID)
+				}
 			}
 		}
 	}()
 
-	// Timeout job (runs every 5 seconds)
+	// Timeout job (runs every 20 seconds)
 	go func() {
-		ticker := time.NewTicker(5 * time.Second)
+		ticker := time.NewTicker(20 * time.Second)
 		defer ticker.Stop()
 
-		for range ticker.C {
-			games, err := b.handlers.TodRepo.GetTimedOutGames()
-			if err != nil {
-				continue
-			}
+		for {
+			select {
+			case <-b.ctx.Done():
+				return
+			case <-ticker.C:
+				games, err := todRepo.GetTimedOutGames()
+				if err != nil {
+					continue
+				}
 
-			for _, game := range games {
-				b.handlers.HandleTodTimeout(game.ID, b)
+				for _, game := range games {
+					b.handlers.HandleTodTimeout(game.ID, b)
+				}
 			}
 		}
 	}()
@@ -232,8 +287,13 @@ func (b *Bot) StartTodBackgroundJobs() {
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
 
-		for range ticker.C {
-			b.handlers.TodRepo.CleanupOldActions()
+		for {
+			select {
+			case <-b.ctx.Done():
+				return
+			case <-ticker.C:
+				todRepo.CleanupOldActions()
+			}
 		}
 	}()
 

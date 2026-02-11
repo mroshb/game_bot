@@ -340,15 +340,26 @@ func (h *HandlerManager) EndQuizGame(matchID uint, bot BotInterface) {
 			loserID = match.User2ID
 		}
 		h.QuizMatchRepo.FinishQuizMatch(matchID, winnerID)
-		h.CoinRepo.AddCoins(winnerID, int64(models.QuizWinRewardCoins), "quiz_win", "Quiz game win reward")
+		h.CoinRepo.AddCoins(winnerID, int64(models.QuizWinRewardCoins), models.TxTypeGameReward, "Quiz game win reward")
 		h.UserRepo.AddXP(winnerID, models.QuizWinRewardXP)
 		h.UserRepo.AddXP(loserID, models.QuizLoseRewardXP)
+		h.UserRepo.AddLeaguePoints(winnerID, 20)
+
+		// Village rewards
+		h.VillageSvc.UpdateWarScore(winnerID, 15)
+		h.VillageSvc.AddXPForUser(winnerID, 60)
 	} else {
 		h.QuizMatchRepo.FinishQuizMatch(matchID, 0)
-		h.CoinRepo.AddCoins(match.User1ID, int64(models.QuizDrawRewardCoins), "quiz_draw", "Quiz game draw reward")
-		h.CoinRepo.AddCoins(match.User2ID, int64(models.QuizDrawRewardCoins), "quiz_draw", "Quiz game draw reward")
+		h.CoinRepo.AddCoins(match.User1ID, int64(models.QuizDrawRewardCoins), models.TxTypeGameReward, "Quiz game draw reward")
+		h.CoinRepo.AddCoins(match.User2ID, int64(models.QuizDrawRewardCoins), models.TxTypeGameReward, "Quiz game draw reward")
 		h.UserRepo.AddXP(match.User1ID, models.QuizDrawRewardXP)
 		h.UserRepo.AddXP(match.User2ID, models.QuizDrawRewardXP)
+		h.UserRepo.AddLeaguePoints(match.User1ID, 8)
+		h.UserRepo.AddLeaguePoints(match.User2ID, 8)
+
+		// Village rewards for draw
+		h.VillageSvc.AddXPForUser(match.User1ID, 25)
+		h.VillageSvc.AddXPForUser(match.User2ID, 25)
 	}
 
 	msg1 := "🎮 بازی تمام شد!\n\n"
@@ -474,6 +485,21 @@ func (h *HandlerManager) HandleQuizTimeout(matchID uint, bot BotInterface) {
 	bot.SendMessage(match.User1.TelegramID, msg, nil)
 	bot.SendMessage(match.User2.TelegramID, msg, nil)
 
+	if match.TurnUserID != nil {
+		h.UserRepo.AddLeaguePoints(*match.TurnUserID, -10)
+		winnerID := match.User1ID
+		if *match.TurnUserID == match.User1ID {
+			winnerID = match.User2ID
+		}
+		h.UserRepo.AddLeaguePoints(winnerID, 10)
+		h.CoinRepo.AddCoins(winnerID, 20, models.TxTypeGameReward, "پاداش برد به دلیل AFK حریف")
+		h.UserRepo.AddXP(winnerID, 15)
+
+		// Village rewards
+		h.VillageSvc.UpdateWarScore(winnerID, 8)
+		h.VillageSvc.AddXPForUser(winnerID, 35)
+	}
+
 	cleanupQuizGameSession(matchID)
 
 	// Set status back to online if no other active games
@@ -481,6 +507,21 @@ func (h *HandlerManager) HandleQuizTimeout(matchID uint, bot BotInterface) {
 	h.updateQuizPlayerStatus(match.User2ID)
 
 	logger.Info("Quiz match timed out", "match_id", matchID)
+}
+
+func (h *HandlerManager) HandleQuizForceWin(userID int64, matchID uint, bot BotInterface) {
+	match, err := h.QuizMatchRepo.GetQuizMatch(matchID)
+	if err != nil {
+		return
+	}
+
+	// Check if 24 hours passed since last activity
+	if time.Since(match.LastActivityAt) < 24*time.Hour {
+		bot.SendMessage(userID, "⏳ نوبتش نگذشته! فقط در صورتی که حریف بیش از ۲۴ ساعت غیرفعال باشد می‌توانید برد فنی بگیرید.", nil)
+		return
+	}
+
+	h.HandleQuizTimeout(matchID, bot)
 }
 
 // ========================================

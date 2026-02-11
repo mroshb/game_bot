@@ -359,9 +359,9 @@ func (h *HandlerManager) handleQueueTimeout(userID uint, telegramID int64, bot B
 
 	h.MatchRepo.RemoveFromQueue(userID)
 
-	// Refund half coins
-	refundAmount := queueEntry.CoinsPaid / 2
-	if err := h.CoinRepo.AddCoins(userID, refundAmount, models.TxTypeMatchRefund, "بازگشت نصف هزینه به دلیل timeout"); err != nil {
+	// Refund full coins
+	refundAmount := queueEntry.CoinsPaid
+	if err := h.CoinRepo.AddCoins(userID, refundAmount, models.TxTypeMatchRefund, "بازگشت کامل هزینه به دلیل timeout"); err != nil {
 		logger.Error("Failed to refund coins", "error", err)
 	}
 
@@ -369,7 +369,7 @@ func (h *HandlerManager) handleQueueTimeout(userID uint, telegramID int64, bot B
 	h.UserRepo.UpdateUserStatus(userID, models.UserStatusOnline)
 
 	// Notify user
-	msg := fmt.Sprintf("⏰ زمان تموم شد!\n\n💰 بازگشت: %d سکه (نصف هزینه)\n\nمتأسفانه کسی پیدا نشد.", refundAmount)
+	msg := fmt.Sprintf("⏰ زمان تموم شد!\n\n💰 بازگشت: %d سکه (هزینه کامل)\n\nمتأسفانه کسی پیدا نشد.", refundAmount)
 
 	user, _ := h.UserRepo.GetUserByID(userID)
 	isAdmin := false

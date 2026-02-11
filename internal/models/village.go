@@ -5,17 +5,21 @@ import (
 )
 
 type Village struct {
-	ID          uint      `gorm:"primaryKey"`
-	Name        string    `gorm:"type:varchar(255);uniqueIndex;not null"`
-	CreatorID   uint      `gorm:"not null"`
-	Creator     User      `gorm:"foreignKey:CreatorID"`
-	Description string    `gorm:"type:text"`
-	XP          int64     `gorm:"default:0;not null"`
-	Level       int       `gorm:"default:1;not null"`
-	Score       int64     `gorm:"default:0;not null"` // For Ranking
-	MemberCount int       `gorm:"default:1;not null"`
-	CreatedAt   time.Time `gorm:"autoCreateTime"`
-	UpdatedAt   time.Time `gorm:"autoUpdateTime"`
+	ID              uint      `gorm:"primaryKey"`
+	Name            string    `gorm:"type:varchar(255);uniqueIndex;not null"`
+	CreatorID       uint      `gorm:"not null"`
+	Creator         User      `gorm:"foreignKey:CreatorID"`
+	Description     string    `gorm:"type:text"`
+	XP              int64     `gorm:"default:0;not null"`
+	Level           int       `gorm:"default:1;not null"`
+	Score           int64     `gorm:"default:0;not null"` // For Ranking
+	Treasury        int64     `gorm:"default:0;not null"` // For Upgrades
+	BuffXPLevel     int       `gorm:"default:0;not null"` // 0-5
+	BuffCoinLevel   int       `gorm:"default:0;not null"` // 0-5
+	BuffShieldLevel int       `gorm:"default:0;not null"` // 0-5
+	MemberCount     int       `gorm:"default:1;not null"`
+	CreatedAt       time.Time `gorm:"autoCreateTime"`
+	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
 }
 
 type VillageMember struct {

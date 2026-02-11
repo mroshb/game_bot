@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"github.com/mroshb/game_bot/pkg/logger"
 	"github.com/mroshb/game_bot/pkg/utils"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 type Bot struct {
@@ -29,6 +31,10 @@ type Bot struct {
 
 	// Worker pool for parallel processing
 	workerChans []chan tgbotapi.Update
+
+	// Shutdown context
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // Session states
@@ -83,10 +89,12 @@ func InitBot(cfg *config.Config, db *gorm.DB) (*Bot, error) {
 	villageRepo := repositories.NewVillageRepository(db)
 	quizMatchRepo := repositories.NewQuizMatchRepository(db)
 	todRepo := repositories.NewTodRepository(db)
-	villageSvc := services.NewVillageService(villageRepo, userRepo)
+	villageSvc := services.NewVillageService(db, villageRepo, userRepo, coinRepo)
 
 	// Initialize handler manager
 	handlerMgr := handlers.NewHandlerManager(cfg, db, userRepo, coinRepo, matchRepo, friendRepo, gameRepo, roomRepo, villageRepo, quizMatchRepo, todRepo, villageSvc)
+
+	ctx, cancel := context.WithCancel(context.Background())
 
 	bot := &Bot{
 		api:         api,
@@ -95,6 +103,8 @@ func InitBot(cfg *config.Config, db *gorm.DB) (*Bot, error) {
 		handlers:    handlerMgr,
 		sessions:    make(map[int64]*handlers.UserSession),
 		workerChans: make([]chan tgbotapi.Update, 10), // 10 workers
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 
 	// Start workers
@@ -120,6 +130,13 @@ func (b *Bot) startUpdateListener() {
 	u.Timeout = 60
 
 	for {
+		// Check if we should stop
+		select {
+		case <-b.ctx.Done():
+			return
+		default:
+		}
+
 		logger.Info("Starting update listener...")
 		updates := b.api.GetUpdatesChan(u)
 
@@ -145,6 +162,13 @@ func (b *Bot) startUpdateListener() {
 			}
 		}
 
+		// Check if we stopped intentionally
+		select {
+		case <-b.ctx.Done():
+			return
+		default:
+		}
+
 		logger.Warn("Update channel closed. Restarting in 5 seconds...")
 		time.Sleep(5 * time.Second)
 	}
@@ -154,25 +178,50 @@ func (b *Bot) startBackgroundJobs() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		// Handle timeouts
-		timedOutSessions, err := b.handlers.MatchRepo.CheckAndHandleTimeouts()
-		if err != nil {
-			logger.Error("Failed to check timeouts", "error", err)
-		} else {
-			// Notify users about timeout
-			for _, session := range timedOutSessions {
-				b.handlers.HandleMatchTimeout(session.User1ID, b)
-				b.handlers.HandleMatchTimeout(session.User2ID, b)
+	// Use a silent database session for background jobs to reduce log noise
+	silentDB := b.db.Session(&gorm.Session{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	matchRepo := b.handlers.MatchRepo.WithTx(silentDB)
+	userRepo := b.handlers.UserRepo.WithTx(silentDB)
+
+	for {
+		select {
+		case <-b.ctx.Done():
+			return
+		case <-ticker.C:
+			// Handle timeouts
+			timedOutSessions, err := matchRepo.CheckAndHandleTimeouts()
+			if err != nil {
+				logger.Error("Failed to check timeouts", "error", err)
+			} else {
+				// Notify users about timeout
+				for _, session := range timedOutSessions {
+					b.handlers.HandleMatchTimeout(session.User1ID, b)
+					b.handlers.HandleMatchTimeout(session.User2ID, b)
+				}
 			}
-		}
 
-		// Check Quiz Match Timeouts (3 days)
-		b.handlers.CheckQuizTimeouts(b)
+			// Check Quiz Match Timeouts (3 days)
+			b.handlers.CheckQuizTimeouts(b)
 
-		// Mark inactive users offline (e.g. 10 minutes)
-		if count, err := b.handlers.UserRepo.MarkInactiveUsersOffline(10 * time.Minute); err == nil && count > 0 {
-			logger.Debug("Marked inactive users offline", "count", count)
+			// Mark inactive users offline (e.g. 10 minutes)
+			if count, err := userRepo.MarkInactiveUsersOffline(10 * time.Minute); err == nil && count > 0 {
+				logger.Debug("Marked inactive users offline", "count", count)
+			}
+
+			// Process Village Wars
+			if err := b.handlers.VillageSvc.WithTx(silentDB).ProcessExpiredWars(); err != nil {
+				logger.Error("Failed to process village wars", "error", err)
+			}
+
+			// Weekly League Reset (Every Saturday at midnight)
+			now := time.Now()
+			if now.Weekday() == time.Saturday && now.Hour() == 0 && now.Minute() == 0 {
+				if err := userRepo.ResetWeeklyLeagues(); err != nil {
+					logger.Error("Failed to reset weekly leagues", "error", err)
+				} else {
+					logger.Info("Weekly leagues reset successfully")
+				}
+			}
 		}
 	}
 }
@@ -379,15 +428,6 @@ func (b *Bot) handleMessage(message *tgbotapi.Message) {
 				return
 			}
 
-			// Intercept Main Menu buttons during chat
-			switch normalizeButton(message.Text) {
-			case normalizeButton(BtnPlayGame), normalizeButton(BtnProfile), normalizeButton(BtnLeaderboard), normalizeButton(BtnFriends),
-				normalizeButton(BtnHelp), normalizeButton(BtnQuickMatch), normalizeButton(BtnPlayWithFriends),
-				normalizeButton(BtnChatNow), normalizeButton(BtnReferral), normalizeButton(BtnCoins), normalizeButton(BtnVillageHub):
-				b.sendMessage(userID, "⚠️ شما در چت فعال هستید. لطفاً اول چت را تمام کنید.", handlers.ChatKeyboard())
-				return
-			}
-
 			// Forward message
 			b.handleChatMessage(message, user)
 			return
@@ -444,8 +484,8 @@ func (b *Bot) handleMessage(message *tgbotapi.Message) {
 		// No button, just text
 		b.sendMessage(userID, "👋 سلام! برای شروع ثبت نام لطفاً دستور /start را بزنید.", nil)
 	} else {
-		// If registered but unknown input -> Main Menu
-		b.sendMessage(userID, MsgMainMenu, MainMenuKeyboard(false))
+		// If registered but unknown input -> Main Menu (respecting activity)
+		b.SendMainMenu(userID, user.TelegramID == b.config.SuperAdminTgID)
 	}
 }
 
@@ -468,7 +508,18 @@ func (b *Bot) handleCommand(message *tgbotapi.Message, isRegistered bool) {
 			var villageID uint
 			fmt.Sscanf(utils.NormalizePersianNumbers(args), "vjoin_%d", &villageID)
 			if villageID != 0 {
-				b.handlers.JoinVillageByID(userID, villageID, b)
+				if isRegistered {
+					b.handlers.JoinVillageByID(userID, villageID, b)
+				} else {
+					// Save pending action for after registration
+					session := b.getSession(userID)
+					session.Data["pending_vjoin"] = villageID
+
+					// Start registration flow
+					session.State = handlers.StateRegisterGender
+					msgID := b.sendMessage(userID, MsgWelcome, GenderKeyboard())
+					session.Data["last_bot_msg_id"] = msgID
+				}
 				return
 			}
 		}
@@ -551,6 +602,18 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 
 	btn := normalizeButton(text)
 
+	// Activity guard: if user is in an active state, they can only use their "End" button
+	// This prevents them from opening the main menu or other features while searching or in a match
+	isEndAction := btn == normalizeButton(BtnEndChat) || btn == normalizeButton(BtnCancel) || btn == normalizeButton(BtnTodQuit)
+	isChatGameTrigger := (btn == normalizeButton(BtnTruthDare) || btn == normalizeButton(BtnQuiz)) && user.Status == models.UserStatusInMatch
+
+	if isRegistered && user != nil && !isEndAction && !isChatGameTrigger {
+		if user.Status == models.UserStatusSearching || user.Status == models.UserStatusInMatch {
+			b.sendMessage(userID, "⚠️ شما در حال حاضر مشغول یک فعالیت (چت یا بازی) هستید. برای دسترسی به منوی اصلی باید فعالیت فعلی را تمام کنید یا گزینه خروج/انصراف را بزنید.", ActivityRestrictionKeyboard(user.Status))
+			return true
+		}
+	}
+
 	// Helper to clear state for menu buttons
 	clearState := func() {
 		b.getSession(userID).State = ""
@@ -560,6 +623,22 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 	case normalizeButton(BtnPlayGame):
 		clearState()
 		b.sendMessage(userID, "چه مدلی میخوای بازی کنی؟ انتخاب کن و وارد میدون شو!", PlayModeKeyboard())
+
+	case normalizeButton(BtnTodAnonymous):
+		clearState()
+		b.sendMessage(userID, "🔥 بخش بازی با ناشناس:\n\nلطفاً فیلتر مورد نظرت رو انتخاب کن:", TodAnonymousFilterKeyboard())
+
+	case normalizeButton(BtnTodFriends):
+		clearState()
+		b.handlers.StartTodFriends(userID, b)
+
+	case normalizeButton(BtnTodRegister):
+		clearState()
+		b.handlers.StartTodQuestionRegistration(userID, b)
+
+	case normalizeButton(BtnTodHelp):
+		clearState()
+		b.sendMessage(userID, MsgHelp, nil) // Or a specific ToD help message
 
 	case normalizeButton(BtnChatNow):
 		clearState()
@@ -695,6 +774,18 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 	case normalizeButton(BtnVillageGame):
 		b.sendMessage(userID, "🎮 بازی‌های دهکده به زودی فعال می‌شوند! (در حال توسعه)", nil)
 
+	case normalizeButton(BtnVillageTreasury):
+		clearState()
+		b.handlers.ShowVillageTreasury(userID, b)
+
+	case normalizeButton(BtnVillageBuffs):
+		clearState()
+		b.handlers.ShowVillageBuffs(userID, b)
+
+	case normalizeButton(BtnVillageWar):
+		clearState()
+		b.handlers.ShowVillageWar(userID, b)
+
 	case normalizeButton(BtnInviteToVillage):
 		clearState()
 		b.handlers.HandleVillageInvite(userID, b)
@@ -754,42 +845,7 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 		b.sendMessage(userID, "⚙️ تنظیمات و راهنمای بازی:", SettingsHelpKeyboard())
 
 	case normalizeButton(BtnReferral):
-		// Get user's referral statistics
-		user, _ := b.handlers.UserRepo.GetUserByTelegramID(userID)
-		if user == nil {
-			return true
-		}
-
-		referralCount, _ := b.handlers.UserRepo.GetReferralCount(user.ID)
-
-		// Calculate total rewards earned from referrals (100 coins per referral)
-		totalRewards := referralCount * 100
-
-		botUser, _ := b.api.GetMe()
-		inviteLink := fmt.Sprintf("https://t.me/%s?start=ref_%d", botUser.UserName, userID)
-
-		// Enhanced message with statistics
-		referralMsg := fmt.Sprintf(
-			"📣 معرفی به دوستان:\n\n"+
-				"با دعوت از دوستان خود، هر دو نفر جایزه دریافت می‌کنید!\n\n"+
-				"🎁 پاداش‌ها:\n"+
-				"• شما: ۱۰۰ سکه برای هر دعوت\n"+
-				"• دوست شما: ۵۰ سکه هدیه ورود\n\n"+
-				"📊 آمار دعوت‌های شما:\n"+
-				"👥 تعداد دعوت‌ها: %d نفر\n"+
-				"💰 کل پاداش دریافتی: %d سکه\n\n"+
-				"🔗 لینک دعوت اختصاصی شما:\n%s",
-			referralCount,
-			totalRewards,
-			inviteLink,
-		)
-
-		keyboard := tgbotapi.NewInlineKeyboardMarkup(
-			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonURL("📣 اشتراک‌گذاری با دوستان", fmt.Sprintf("https://t.me/share/url?url=%s&text=%s", inviteLink, "کلی بازی و چت باحال! بیا دهکده ما 🎮")),
-			),
-		)
-		b.sendMessage(userID, referralMsg, keyboard)
+		b.handlers.ShowReferralStats(userID, b)
 
 	case normalizeButton(BtnCoins):
 		clearState()
@@ -828,6 +884,10 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 	case normalizeButton(BtnEndChat):
 		clearState()
 		b.handlers.EndChat(userID, b)
+
+	case normalizeButton(BtnTodQuit):
+		clearState()
+		b.handlers.HandleTodQuitSimple(userID, b)
 
 	case normalizeButton(BtnCancel):
 		if user != nil {
@@ -1126,8 +1186,32 @@ func (b *Bot) handleCallbackQuery(query *tgbotapi.CallbackQuery) {
 		return
 	}
 
+	// Village treasury, buffs, and war
+	if strings.HasPrefix(data, "vdonate_") {
+		var amount int64
+		fmt.Sscanf(data, "vdonate_%d", &amount)
+		b.handlers.HandleVillageDonate(userID, amount, b)
+		return
+	}
+	if strings.HasPrefix(data, "vupgrade_") {
+		buffType := strings.TrimPrefix(data, "vupgrade_")
+		b.handlers.HandleVillageUpgrade(userID, buffType, b)
+		return
+	}
+	if data == "vwar_start" {
+		b.handlers.HandleVillageWarStart(userID, b)
+		return
+	}
+
 	if len(data) > 14 && data[:14] == "gt_reject_inv_" {
 		b.sendMessage(userID, "❌ دعوت بازی رد شد.", nil)
+		return
+	}
+
+	if strings.HasPrefix(data, "tod_chat_") {
+		var gameID uint
+		fmt.Sscanf(data, "tod_chat_%d", &gameID)
+		b.handlers.HandleTodChat(userID, gameID, b)
 		return
 	}
 
@@ -1279,6 +1363,17 @@ func (b *Bot) handleCallbackQuery(query *tgbotapi.CallbackQuery) {
 }
 
 func (b *Bot) handleChatMessage(message *tgbotapi.Message, user *models.User) {
+	// Check for active ToD game first
+	if user.Status == models.UserStatusInMatch {
+		// Check if it's a ToD match
+		todGame, _ := b.handlers.TodRepo.GetActiveGameForUser(user.ID)
+		if todGame != nil {
+			b.handlers.HandleTodChatMessage(message, user, b)
+			return
+		}
+	}
+
+	// Default chat handler
 	b.handlers.HandleChatMessage(message, user, b)
 }
 
@@ -1429,12 +1524,17 @@ func (b *Bot) EditMessage(chatID int64, messageID int, text string, keyboard int
 	}
 }
 
-func (b *Bot) SendMainMenu(chatID int64, _ bool) {
-	b.sendMessage(chatID, MsgMainMenu, MainMenuKeyboard(false))
+func (b *Bot) SendMainMenu(chatID int64, isAdmin bool) {
+	user, _ := b.handlers.UserRepo.GetUserByTelegramID(chatID)
+	if user != nil && (user.Status == models.UserStatusSearching || user.Status == models.UserStatusInMatch) {
+		b.sendMessage(chatID, "⚠️ شما در حال حاضر مشغول هستید. برای دسترسی به منوی اصلی باید فعالیت فعلی را تمام کنید یا گزینه انصراف/پایان را بزنید.", ActivityRestrictionKeyboard(user.Status))
+		return
+	}
+	b.sendMessage(chatID, MsgMainMenu, MainMenuKeyboard(isAdmin))
 }
 
-func (b *Bot) GetMainMenuKeyboard(_ bool) interface{} {
-	return MainMenuKeyboard(false)
+func (b *Bot) GetMainMenuKeyboard(isAdmin bool) interface{} {
+	return MainMenuKeyboard(isAdmin)
 }
 
 func (b *Bot) GetGenderKeyboard() interface{} {
@@ -1465,6 +1565,26 @@ func (b *Bot) GetEditProfileFieldsKeyboard() interface{} {
 	return EditProfileFieldsKeyboard()
 }
 
+func (b *Bot) GetTodAnonymousFilterKeyboard() interface{} {
+	return TodAnonymousFilterKeyboard()
+}
+
+func (b *Bot) GetTodChallengeTypeKeyboard(gameID uint) interface{} {
+	return TodChallengeTypeKeyboard(gameID)
+}
+
+func (b *Bot) GetTodResponderInteractionKeyboard(gameID uint) interface{} {
+	return TodResponderInteractionKeyboard(gameID)
+}
+
+func (b *Bot) GetTodQuestionerInteractionKeyboard(gameID uint) interface{} {
+	return TodQuestionerInteractionKeyboard(gameID)
+}
+
+func (b *Bot) GetTodGroupLobbyKeyboard(sessionID uint, isHost bool) interface{} {
+	return TodGroupLobbyKeyboard(sessionID, isHost)
+}
+
 func (b *Bot) GetAPI() interface{} {
 	return b.api
 }
@@ -1473,7 +1593,24 @@ func (b *Bot) GetConfig() interface{} {
 	return b.config
 }
 
+func (b *Bot) GetVillageHubKeyboard(hasVillage bool) interface{} {
+	return VillageHubKeyboard(hasVillage)
+}
+
+func (b *Bot) GetVillageTreasuryKeyboard() interface{} {
+	return VillageTreasuryKeyboard()
+}
+
+func (b *Bot) GetVillageBuffsKeyboard(isLeader bool) interface{} {
+	return VillageBuffsKeyboard(isLeader)
+}
+
+func (b *Bot) GetVillageWarKeyboard(isLeader bool, hasActiveWar bool) interface{} {
+	return VillageWarKeyboard(isLeader, hasActiveWar)
+}
+
 func (b *Bot) Stop() {
+	b.cancel()
 	b.api.StopReceivingUpdates()
 	logger.Info("Bot stopped receiving updates")
 }
@@ -1540,10 +1677,6 @@ func (b *Bot) startWorker(ch chan tgbotapi.Update) {
 	for update := range ch {
 		b.handleUpdate(update)
 	}
-}
-
-func (b *Bot) GetVillageHubKeyboard(hasVillage bool) interface{} {
-	return VillageHubKeyboard(hasVillage)
 }
 
 func (b *Bot) GetCancelKeyboard() interface{} {

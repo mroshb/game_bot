@@ -1,43 +1,81 @@
 package telegram
 
 import (
+	"fmt"
 	"strconv"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 // MainMenuKeyboard creates the main menu keyboard
-func MainMenuKeyboard(_ bool) tgbotapi.ReplyKeyboardMarkup {
+func MainMenuKeyboard(isAdmin bool) tgbotapi.ReplyKeyboardMarkup {
 	var rows [][]tgbotapi.KeyboardButton
 
-	// Row 1 - My Village
+	// Row 1 - Anonymous / Friends
+	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
+		tgbotapi.NewKeyboardButton(BtnTodAnonymous),
+		tgbotapi.NewKeyboardButton(BtnTodFriends),
+	))
+
+	// Row 2 - Register Question / Help
+	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
+		tgbotapi.NewKeyboardButton(BtnTodRegister),
+		tgbotapi.NewKeyboardButton(BtnTodHelp),
+	))
+
+	// Row 3 - My Village
 	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
 		tgbotapi.NewKeyboardButton(BtnVillageHub),
 	))
 
-	// Row 2 - Play! - Chat Now!
+	// Row 4 - Play! - Chat Now!
 	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
 		tgbotapi.NewKeyboardButton(BtnPlayGame),
 		tgbotapi.NewKeyboardButton(BtnChatNow),
 	))
 
-	// Row 3 - Coins - Leaderboard - Help
+	// Row 5 - Coins - Leaderboard - Profile
 	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
 		tgbotapi.NewKeyboardButton(BtnCoins),
 		tgbotapi.NewKeyboardButton(BtnLeaderboard),
+		tgbotapi.NewKeyboardButton(BtnProfile),
+	))
+
+	// Row 6 - Friends - Referral - Help
+	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
+		tgbotapi.NewKeyboardButton(BtnFriends),
+		tgbotapi.NewKeyboardButton(BtnReferral),
 		tgbotapi.NewKeyboardButton(BtnHelp),
 	))
 
-	// Row 4 - Profile - Friends
-	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
-		tgbotapi.NewKeyboardButton(BtnProfile),
-		tgbotapi.NewKeyboardButton(BtnFriends),
-	))
+	if isAdmin {
+		rows = append(rows, tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(BtnAdminPanel),
+		))
+	}
 
-	// Row 5 - Referral
-	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
-		tgbotapi.NewKeyboardButton(BtnReferral),
-	))
+	return tgbotapi.NewReplyKeyboard(rows...)
+}
+
+// ActivityRestrictionKeyboard returns a restricted keyboard while the user is engaged in an activity
+func ActivityRestrictionKeyboard(status string) tgbotapi.ReplyKeyboardMarkup {
+	var rows [][]tgbotapi.KeyboardButton
+
+	switch status {
+	case "searching":
+		rows = append(rows, tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(BtnCancel),
+		))
+	case "in_match":
+		rows = append(rows, tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(BtnEndChat),
+			tgbotapi.NewKeyboardButton(BtnTodQuit),
+		))
+	default:
+		rows = append(rows, tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(BtnBack),
+		))
+	}
 
 	return tgbotapi.NewReplyKeyboard(rows...)
 }
@@ -282,12 +320,85 @@ func TruthDareRoomKeyboard() tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData(BtnSearchRoom, "btn:"+BtnSearchRoom),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(BtnRandomMatch, "btn:tod_new_game"),
+			tgbotapi.NewInlineKeyboardButtonData(BtnRandomMatch, "btn:tod_anonymous_menu"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(BtnBack, "btn:"+BtnBack),
 		),
 	)
+}
+
+// TodAnonymousFilterKeyboard creates the filter menu for Anonymous mode
+func TodAnonymousFilterKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(BtnTodGirl, "btn:tod_filter_girl"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(BtnTodBoy, "btn:tod_filter_boy"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(BtnTodRandom, "btn:tod_filter_random"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(BtnTodAdvanced, "btn:tod_filter_advanced"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(BtnBack, "btn:main_menu"),
+		),
+	)
+}
+
+// TodChallengeTypeKeyboard creates the challenge selection keyboard for responder
+func TodChallengeTypeKeyboard(gameID uint) tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(BtnTodTruth, fmt.Sprintf("btn:tod_choice_%d_truth", gameID)),
+			tgbotapi.NewInlineKeyboardButtonData(BtnTodTruth18, fmt.Sprintf("btn:tod_choice_%d_truth18", gameID)),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(BtnTodDare, fmt.Sprintf("btn:tod_choice_%d_dare", gameID)),
+			tgbotapi.NewInlineKeyboardButtonData(BtnTodDare18, fmt.Sprintf("btn:tod_choice_%d_dare18", gameID)),
+		),
+	)
+}
+
+// TodResponderInteractionKeyboard creates interaction keyboard for responder (B)
+func TodResponderInteractionKeyboard(gameID uint) tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(BtnTodSwap, fmt.Sprintf("btn:tod_use_item_%d_swap", gameID)),
+			tgbotapi.NewInlineKeyboardButtonData("💬 چت", fmt.Sprintf("btn:tod_chat_%d", gameID)),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(BtnTodQuit, fmt.Sprintf("btn:tod_quit_%d", gameID)),
+			tgbotapi.NewInlineKeyboardButtonData("🎒 آیتم‌ها", fmt.Sprintf("btn:tod_items_%d", gameID)),
+		),
+	)
+}
+
+// TodQuestionerInteractionKeyboard creates interaction keyboard for questioner (A)
+func TodQuestionerInteractionKeyboard(gameID uint) tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("💬 چت", fmt.Sprintf("btn:tod_chat_%d", gameID)),
+			tgbotapi.NewInlineKeyboardButtonData("⚡️ تلنگر", fmt.Sprintf("btn:tod_nudge_%d", gameID)),
+		),
+	)
+}
+
+// TodGroupLobbyKeyboard creates the lobby keyboard for group game
+func TodGroupLobbyKeyboard(sessionID uint, isHost bool) tgbotapi.InlineKeyboardMarkup {
+	var rows [][]tgbotapi.InlineKeyboardButton
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("✋ شرکت می‌کنم", fmt.Sprintf("btn:tod_grp_join_%d", sessionID)),
+	))
+	if isHost {
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("▶️ شروع بازی", fmt.Sprintf("btn:tod_grp_start_%d", sessionID)),
+		))
+	}
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
 }
 
 // LeaderboardKeyboard creates inline keyboard for leaderboard filters
@@ -460,7 +571,14 @@ func VillageHubKeyboard(hasVillage bool) tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData(BtnVillageGame, "btn:"+BtnVillageGame),
 		))
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(BtnVillageTreasury, "btn:"+BtnVillageTreasury),
+			tgbotapi.NewInlineKeyboardButtonData(BtnVillageBuffs, "btn:"+BtnVillageBuffs),
+		))
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(BtnVillageWar, "btn:"+BtnVillageWar),
 			tgbotapi.NewInlineKeyboardButtonData(BtnInviteToVillage, "btn:"+BtnInviteToVillage),
+		))
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(BtnLeaveVillage, "btn:"+BtnLeaveVillage),
 		))
 	}
@@ -471,6 +589,61 @@ func VillageHubKeyboard(hasVillage bool) tgbotapi.InlineKeyboardMarkup {
 
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 		tgbotapi.NewInlineKeyboardButtonData(BtnBack, "btn:"+BtnBack),
+	))
+
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
+func VillageTreasuryKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("💎 اهدای ۵۰۰ سکه", "btn:vdonate_500"),
+			tgbotapi.NewInlineKeyboardButtonData("💎 اهدای ۱۰۰۰ سکه", "btn:vdonate_1000"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("💎 اهدای ۵۰۰۰ سکه", "btn:vdonate_5000"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(BtnBack, "btn:"+BtnVillageHub),
+		),
+	)
+}
+
+func VillageBuffsKeyboard(isLeader bool) tgbotapi.InlineKeyboardMarkup {
+	var rows [][]tgbotapi.InlineKeyboardButton
+
+	if isLeader {
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(BtnUpgradeXP, "btn:vupgrade_xp"),
+			tgbotapi.NewInlineKeyboardButtonData(BtnUpgradeCoin, "btn:vupgrade_coin"),
+		))
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(BtnUpgradeShield, "btn:vupgrade_shield"),
+		))
+	}
+
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData(BtnBack, "btn:"+BtnVillageHub),
+	))
+
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
+func VillageWarKeyboard(isLeader bool, hasActiveWar bool) tgbotapi.InlineKeyboardMarkup {
+	var rows [][]tgbotapi.InlineKeyboardButton
+
+	if isLeader && !hasActiveWar {
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("⚔️ شروع جنگ (۲۴ ساعت)", "btn:vwar_start"),
+		))
+	}
+
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("🔄 بروزرسانی", "btn:"+BtnVillageWar),
+	))
+
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData(BtnBack, "btn:"+BtnVillageHub),
 	))
 
 	return tgbotapi.NewInlineKeyboardMarkup(rows...)

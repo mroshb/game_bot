@@ -6,398 +6,283 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/google/uuid"
 	"github.com/mroshb/game_bot/internal/models"
 	"github.com/mroshb/game_bot/pkg/logger"
 )
 
 // ========================================
-// MATCHMAKING
+// MATCHMAKING & FILTERING
 // ========================================
 
-// StartTodMatchmaking starts matchmaking for Truth or Dare
+// StartTodMatchmaking shows the filter menu for Anonymous mode
 func (h *HandlerManager) StartTodMatchmaking(userID int64, bot BotInterface) {
-	// This function is now in tod_matchmaking.go
-	// Keeping this for backward compatibility
-	user, err := h.UserRepo.GetUserByTelegramID(userID)
+	bot.SendMessage(userID, "🔥 بخش بازی با ناشناس:\n\nلطفاً فیلتر مورد نظرت رو انتخاب کن:", bot.GetTodAnonymousFilterKeyboard())
+}
+
+// HandleTodFiltering handles gender selection and starts matchmaking
+func (h *HandlerManager) HandleTodFiltering(telegramID int64, filter string, bot BotInterface) {
+	user, err := h.UserRepo.GetUserByTelegramID(telegramID)
 	if err != nil {
-		bot.SendMessage(userID, "❌ خطا در دریافت اطلاعات کاربر!", nil)
+		bot.SendMessage(telegramID, MsgErrorGeneric, nil)
 		return
 	}
 
-	// Check if already in active game
-	activeGame, _ := h.TodRepo.GetActiveGameForUser(user.ID)
-	if activeGame != nil {
-		bot.SendMessage(userID, "⚠️ شما در یک بازی فعال هستید!", nil)
+	requestedGender := models.RequestedGenderAny
+	cost := 0
+
+	switch filter {
+	case "girl":
+		requestedGender = models.GenderFemale
+		cost = 10
+	case "boy":
+		requestedGender = models.GenderMale
+		cost = 10
+	case "random":
+		requestedGender = models.RequestedGenderAny
+		cost = 0
+	case "advanced":
+		bot.SendMessage(telegramID, "⚙️ بخش پیشرفته به زودی فعال می‌شود.", nil)
 		return
 	}
 
-	// Check if user is already in matchmaking queue
+	if user.CoinBalance < int64(cost) {
+		bot.SendMessage(telegramID, fmt.Sprintf(MsgInsufficientCoins, user.CoinBalance), nil)
+		return
+	}
+
+	if cost > 0 {
+		if err := h.CoinRepo.DeductCoins(user.ID, int64(cost), "tod_filter", "Truth or Dare gender filter"); err != nil {
+			bot.SendMessage(telegramID, MsgErrorGeneric, nil)
+			return
+		}
+	}
+
+	h.StartTodMatchmakingWithFilter(user, requestedGender, bot)
+}
+
+// StartTodMatchmakingWithFilter initiates matchmaking with specific filters
+func (h *HandlerManager) StartTodMatchmakingWithFilter(user *models.User, gender string, bot BotInterface) {
 	inQueue, _ := h.MatchRepo.IsUserInQueue(user.ID)
 	if inQueue {
-		bot.SendMessage(userID, "⏳ شما در حال حاضر در صف matchmaking هستید!\n\nلطفاً صبر کنید تا حریف پیدا شود...", nil)
+		bot.SendMessage(user.TelegramID, MsgAlreadySearching, nil)
 		return
 	}
 
-	// Add user to matchmaking queue
+	activeGame, _ := h.TodRepo.GetActiveGameForUser(user.ID)
+	if activeGame != nil {
+		bot.SendMessage(user.TelegramID, MsgAlreadyInMatch, nil)
+		return
+	}
+
 	queue := &models.MatchmakingQueue{
 		UserID:          user.ID,
-		RequestedGender: models.RequestedGenderAny,
-		CoinsPaid:       0,
-		GameType:        models.GameTypeTod,
+		GameType:        models.GameTypeTruthDare,
+		RequestedGender: gender,
 	}
 
-	err = h.MatchRepo.AddToQueue(queue)
-	if err != nil {
-		logger.Error("Failed to add user to queue", "error", err)
-		bot.SendMessage(userID, "❌ خطا در شروع matchmaking!", nil)
+	if err := h.MatchRepo.AddToQueue(queue); err != nil {
+		bot.SendMessage(user.TelegramID, MsgErrorGeneric, nil)
 		return
 	}
 
-	// Update user status
 	h.UserRepo.UpdateUserStatus(user.ID, models.UserStatusSearching)
 
-	// Send searching message
-	bot.SendMessage(userID, "🔍 در حال جستجوی حریف برای بازی جرعت و حقیقت...\n\n⏳ لطفاً صبر کنید...", nil)
+	cancelKeyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("❌ لغو جستجو", "btn:tod_cancel_search"),
+		),
+	)
+	bot.SendMessage(user.TelegramID, "🔍 در حال جستجوی حریف مناسب...\nصبور باشید.", cancelKeyboard)
 
-	// Try to find a match immediately
 	go h.tryTodMatchmaking(user.ID, bot)
 }
 
-// tryTodMatchmaking attempts to find a match for ToD game
 func (h *HandlerManager) tryTodMatchmaking(userID uint, bot BotInterface) {
-	// Wait a bit to allow other users to join
 	time.Sleep(2 * time.Second)
 
-	// Get user from queue
 	_, err := h.MatchRepo.GetQueueEntry(userID)
 	if err != nil {
-		// User might have cancelled
 		return
 	}
 
-	// Try to find a match
 	filters := &models.MatchFilters{
 		Gender:   models.RequestedGenderAny,
-		GameType: models.GameTypeTod,
+		GameType: models.GameTypeTruthDare,
 	}
-	opponent, err := h.MatchRepo.FindMatch(userID, filters)
+	opponent, err := h.MatchRepo.FindAndRemoveMatch(userID, filters)
 	if err != nil || opponent == nil {
-		// No match found yet, user stays in queue
-		user, _ := h.UserRepo.GetUserByID(userID)
-		if user != nil {
-			bot.SendMessage(user.TelegramID, "⏳ هنوز حریفی پیدا نشد...\n\nشما در صف matchmaking هستید. به محض پیدا شدن حریف، بازی شروع می‌شود!", nil)
-		}
 		return
 	}
 
-	// Match found! Remove both users from queue
-	h.MatchRepo.RemoveFromQueue(userID)
-	h.MatchRepo.RemoveFromQueue(opponent.ID)
-
-	// Create match session first (Required for ToD game)
-	// We set timeout to 1 hour for game session
-	matchSession, err := h.MatchRepo.CreateMatchSession(userID, opponent.ID, 1*time.Hour)
+	matchSession, err := h.MatchRepo.CreateMatchSession(userID, opponent.ID, 24*time.Hour)
 	if err != nil {
-		logger.Error("Failed to create match session for ToD", "error", err)
+		logger.Error("Failed to create match session", "error", err)
 		return
 	}
 
-	// Create ToD game
 	game, err := h.TodRepo.CreateGame(matchSession.ID, userID, opponent.ID)
 	if err != nil {
-		logger.Error("Failed to create ToD game", "error", err)
-		user, _ := h.UserRepo.GetUserByID(userID)
-		if user != nil {
-			bot.SendMessage(user.TelegramID, "❌ خطا در ایجاد بازی!", nil)
-		}
-		bot.SendMessage(opponent.TelegramID, "❌ خطا در ایجاد بازی!", nil)
-
-		// End session and update statuses
 		h.MatchRepo.EndMatch(matchSession.ID)
 		h.UserRepo.UpdateUserStatus(userID, models.UserStatusOnline)
 		h.UserRepo.UpdateUserStatus(opponent.ID, models.UserStatusOnline)
 		return
 	}
 
-	// Update both users' statuses
 	h.UserRepo.UpdateUserStatus(userID, models.UserStatusInMatch)
 	h.UserRepo.UpdateUserStatus(opponent.ID, models.UserStatusInMatch)
 
-	// Notify both users
 	user, _ := h.UserRepo.GetUserByID(userID)
 	if user != nil {
-		msg := fmt.Sprintf("🎉 حریف پیدا شد!\n\n🔥 بازی جرعت و حقیقت با %s شروع شد!\n\nآماده باش!", opponent.FullName)
-		bot.SendMessage(user.TelegramID, msg, nil)
+		bot.SendMessage(user.TelegramID, fmt.Sprintf("🎉 حریف پیدا شد!\n\n🔥 بازی با %s شروع شد!", opponent.FullName), nil)
 	}
-
-	msg := fmt.Sprintf("🎉 حریف پیدا شد!\n\n🔥 بازی جرعت و حقیقت با %s شروع شد!\n\nآماده باش!", user.FullName)
-	bot.SendMessage(opponent.TelegramID, msg, nil)
+	bot.SendMessage(opponent.TelegramID, fmt.Sprintf("🎉 حریف پیدا شد!\n\n🔥 بازی با %s شروع شد!", user.FullName), nil)
 
 	time.Sleep(2 * time.Second)
-
-	// Start coin flip
 	h.HandleTodCoinFlip(game.ID, bot)
 }
 
-// CancelTodMatchmaking cancels ToD matchmaking for a user
-func (h *HandlerManager) CancelTodMatchmaking(userID int64, bot BotInterface) {
-	user, err := h.UserRepo.GetUserByTelegramID(userID)
+func (h *HandlerManager) CancelTodMatchmaking(telegramID int64, bot BotInterface) {
+	user, err := h.UserRepo.GetUserByTelegramID(telegramID)
 	if err != nil {
 		return
 	}
-
 	h.MatchRepo.RemoveFromQueue(user.ID)
 	h.UserRepo.UpdateUserStatus(user.ID, models.UserStatusOnline)
-
-	bot.SendMessage(userID, "❌ جستجوی حریف لغو شد.", nil)
+	bot.SendMessage(telegramID, "❌ جستجو لغو شد.", nil)
 }
 
 // ========================================
-// COIN FLIP
+// GAME FLOW
 // ========================================
 
-// HandleTodCoinFlip performs coin flip to determine first player
 func (h *HandlerManager) HandleTodCoinFlip(gameID uint, bot BotInterface) {
 	game, err := h.TodRepo.GetGameByID(gameID)
 	if err != nil {
 		return
 	}
 
-	// Show coin flip animation
-	msg := "🎲 در حال قرعه‌کشی برای تعیین نوبت اول..."
+	msg := "🎲 در حال تعیین نقش‌ها (سوال‌کننده و پاسخ‌دهنده)..."
 	bot.SendMessage(game.Match.User1.TelegramID, msg, nil)
 	bot.SendMessage(game.Match.User2.TelegramID, msg, nil)
 
 	time.Sleep(2 * time.Second)
 
-	// Random selection
 	firstPlayer := game.ActivePlayerID
 	secondPlayer := game.PassivePlayerID
 
 	if rand.Intn(2) == 1 {
 		firstPlayer, secondPlayer = secondPlayer, firstPlayer
-		// Update game
-		h.DB.Model(&models.TodGame{}).Where("id = ?", gameID).
-			Updates(map[string]interface{}{
-				"active_player_id":  firstPlayer,
-				"passive_player_id": secondPlayer,
-			})
+		h.TodRepo.SetGamePlayers(gameID, firstPlayer, secondPlayer)
 	}
 
-	var firstName, secondName string
-	if firstPlayer == game.Match.User1ID {
-		firstName = game.Match.User1.FullName
-		secondName = game.Match.User2.FullName
-	} else {
-		firstName = game.Match.User2.FullName
-		secondName = game.Match.User1.FullName
-	}
+	// Determine who is starting
+	responder := getUserByID(firstPlayer, game.Match)
+	questioner := getUserByID(secondPlayer, game.Match)
 
-	resultMsg := fmt.Sprintf("🎲 نتیجه قرعه‌کشی:\n\n🎯 نوبت اول: %s\n⏳ نوبت دوم: %s\n\nبازی شروع شد! 🎮\nراند 1 از %d",
-		firstName, secondName, game.MaxRounds)
+	bot.SendMessage(responder.TelegramID, fmt.Sprintf("🎲 قرعه‌کشی انجام شد!\n\n👤 نقش شما: **پاسخ‌دهنده** (باید جرات یا حقیقت را انتخاب کنید)\n👤 رقیب: %s (سوال‌کننده)", questioner.FullName), nil)
+	bot.SendMessage(questioner.TelegramID, fmt.Sprintf("🎲 قرعه‌کشی انجام شد!\n\n👤 نقش شما: **سوال‌کننده** (منتظر انتخاب حریف بمانید)\n👤 رقیب: %s (پاسخ‌دهنده)", responder.FullName), nil)
 
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("▶️ ادامه", fmt.Sprintf("btn:tod_start_%d", gameID)),
-		),
-	)
+	time.Sleep(2 * time.Second)
 
-	bot.SendMessage(game.Match.User1.TelegramID, resultMsg, keyboard)
-	bot.SendMessage(game.Match.User2.TelegramID, resultMsg, keyboard)
-
-	// Update state
-	h.TodRepo.UpdateGameState(gameID, models.TodStateCoinFlip)
+	// Trigger start
+	h.HandleTodStart(int64(game.Match.User1.TelegramID), gameID, bot)
 }
 
-// HandleTodStart starts the game after coin flip
 func (h *HandlerManager) HandleTodStart(userID int64, gameID uint, bot BotInterface) {
 	game, err := h.TodRepo.GetGameByID(gameID)
 	if err != nil {
 		return
 	}
 
-	// Create first turn
-	_, err = h.TodRepo.CreateTurn(gameID, game.ActivePlayerID, game.PassivePlayerID, 1)
-	if err != nil {
-		logger.Error("Failed to create turn", "error", err)
-		return
-	}
-
-	// Update state to waiting for choice
+	h.TodRepo.CreateTurn(gameID, game.ActivePlayerID, game.PassivePlayerID, game.CurrentRound)
 	h.TodRepo.UpdateGameState(gameID, models.TodStateWaitingChoice)
 
-	// Show choice screen
 	h.ShowTodChoiceScreen(gameID, bot)
 }
 
-// ========================================
-// CHOICE PHASE
-// ========================================
-
-// ShowTodChoiceScreen shows the choice screen to both players
 func (h *HandlerManager) ShowTodChoiceScreen(gameID uint, bot BotInterface) {
-	game, err := h.TodRepo.GetGameByID(gameID)
-	if err != nil {
-		return
-	}
-
+	game, _ := h.TodRepo.GetGameByID(gameID)
 	activeUser := getUserByID(game.ActivePlayerID, game.Match)
 	passiveUser := getUserByID(game.PassivePlayerID, game.Match)
 
-	if activeUser == nil || passiveUser == nil {
-		return
-	}
+	// Active (Responder) chooses challenge
+	activeMsg := fmt.Sprintf("🎮 راند %d\n🔔 **نوبت شماست!**\n\nنوع چالش رو انتخاب کن:", game.CurrentRound)
+	bot.SendMessage(activeUser.TelegramID, activeMsg, bot.GetTodChallengeTypeKeyboard(gameID))
 
-	// Calculate remaining time
-	remainingSeconds := 60
-	if game.TurnDeadline != nil {
-		remaining := time.Until(*game.TurnDeadline)
-		remainingSeconds = int(remaining.Seconds())
-		if remainingSeconds < 0 {
-			remainingSeconds = 0
-		}
-	}
-
-	// Active player view
-	activeMsg := fmt.Sprintf("🎮 راند %d/%d\n⏰ نوبت شما! (⏱ %d ثانیه)\n\n━━━━━━━━━━━━━━\nانتخاب کنید:",
-		game.CurrentRound, game.MaxRounds, remainingSeconds)
-
-	activeKeyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔴 جرئت", fmt.Sprintf("btn:tod_choice_%d_dare", gameID)),
-			tgbotapi.NewInlineKeyboardButtonData("🔵 حقیقت", fmt.Sprintf("btn:tod_choice_%d_truth", gameID)),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🎒 آیتمها", fmt.Sprintf("btn:tod_items_%d", gameID)),
-			tgbotapi.NewInlineKeyboardButtonData("🏳️ انصراف", fmt.Sprintf("btn:tod_quit_%d", gameID)),
-		),
-	)
-
-	bot.SendMessage(activeUser.TelegramID, activeMsg, activeKeyboard)
-
-	// Passive player view
-	passiveMsg := fmt.Sprintf("🎮 راند %d/%d\n⏳ حریف در حال انتخاب...\n\n━━━━━━━━━━━━━━\n👤 نوبت: %s\n\n⏱ زمان باقی‌مانده: %d ثانیه",
-		game.CurrentRound, game.MaxRounds, activeUser.FullName, remainingSeconds)
-
-	passiveKeyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("💤 تلنگر", fmt.Sprintf("btn:tod_nudge_%d", gameID)),
-			tgbotapi.NewInlineKeyboardButtonData("💬 کلکل", fmt.Sprintf("btn:tod_chat_%d", gameID)),
-		),
-	)
-
-	bot.SendMessage(passiveUser.TelegramID, passiveMsg, passiveKeyboard)
+	// Passive (Questioner) waits
+	passiveMsg := fmt.Sprintf("🎮 راند %d\n⏳ منتظر انتخاب حریف (%s)...", game.CurrentRound, activeUser.FullName)
+	bot.SendMessage(passiveUser.TelegramID, passiveMsg, nil)
 }
 
-// HandleTodChoice handles truth or dare choice
-func (h *HandlerManager) HandleTodChoice(userID int64, gameID uint, choice string, bot BotInterface) {
-	user, err := h.UserRepo.GetUserByTelegramID(userID)
-	if err != nil {
-		return
-	}
+func (h *HandlerManager) HandleTodChoice(telegramID int64, gameID uint, choice string, bot BotInterface) {
+	user, _ := h.UserRepo.GetUserByTelegramID(telegramID)
+	game, _ := h.TodRepo.GetGameByID(gameID)
 
-	game, err := h.TodRepo.GetGameByID(gameID)
-	if err != nil {
-		return
-	}
-
-	// Verify it's user's turn
 	if game.ActivePlayerID != user.ID {
-		bot.SendMessage(userID, "⚠️ نوبت شما نیست!", nil)
 		return
 	}
 
-	// Verify state
-	if game.State != models.TodStateWaitingChoice {
-		bot.SendMessage(userID, "⚠️ در این مرحله نمی‌توانید انتخاب کنید!", nil)
-		return
+	challengeType := models.TodTypeTruth
+	if choice == "dare" || choice == "dare18" {
+		challengeType = models.TodTypeDare
+	}
+	difficulty := "easy"
+	if choice == "truth18" || choice == "dare18" {
+		difficulty = "hard"
 	}
 
-	// Generate action ID for idempotency
-	actionID := uuid.New().String()
-	if h.TodRepo.IsActionProcessed(gameID, actionID) {
-		return // Already processed
-	}
-	h.TodRepo.MarkActionProcessed(gameID, user.ID, actionID, "choice_"+choice)
-
-	// Get current turn
-	turn, err := h.TodRepo.GetCurrentTurn(gameID)
+	// Use relation level "all" by default, or "stranger" if we want to be strict.
+	// Given our seeding uses "all" for many, and "friend" for some, "all" is a better fallback.
+	challenge, err := h.TodRepo.GetRandomChallenge(challengeType, difficulty, "", user.Gender, "all")
 	if err != nil {
-		logger.Error("Failed to get current turn", "error", err)
+		bot.SendMessage(telegramID, "❌ خطا در دریافت چالش! متاسفانه چالشی با این مشخصات پیدا نشد.", nil)
 		return
 	}
 
-	// Update turn choice
+	turn, _ := h.TodRepo.GetCurrentTurn(gameID)
 	h.TodRepo.UpdateTurnChoice(turn.ID, choice)
-
-	// Select challenge
-	challenge, err := h.TodRepo.GetRandomChallenge(choice, "easy", "", user.Gender, "stranger")
-	if err != nil {
-		logger.Error("Failed to get challenge", "error", err)
-		bot.SendMessage(userID, "❌ خطا در دریافت چالش!", nil)
-		return
-	}
-
-	// Update turn with challenge
 	h.TodRepo.UpdateTurnChallenge(turn.ID, challenge.ID, challenge.Text)
-	h.TodRepo.IncrementChallengeUsage(challenge.ID)
-
-	// Update state
 	h.TodRepo.UpdateGameState(gameID, models.TodStateWaitingProof)
 
-	// Show challenge
 	h.ShowTodChallenge(gameID, challenge, bot)
 }
 
-// ShowTodChallenge shows the challenge to both players
 func (h *HandlerManager) ShowTodChallenge(gameID uint, challenge *models.TodChallenge, bot BotInterface) {
-	game, err := h.TodRepo.GetGameByID(gameID)
-	if err != nil {
-		return
-	}
-
+	game, _ := h.TodRepo.GetGameByID(gameID)
 	activeUser := getUserByID(game.ActivePlayerID, game.Match)
 	passiveUser := getUserByID(game.PassivePlayerID, game.Match)
 
-	if activeUser == nil || passiveUser == nil {
-		return
+	// Format difficulty for display
+	difficultyEmoji := "🟢"
+	difficultyText := "آسان"
+	if challenge.Difficulty == "medium" {
+		difficultyEmoji = "🟡"
+		difficultyText = "متوسط"
+	} else if challenge.Difficulty == "hard" {
+		difficultyEmoji = "🔴"
+		difficultyText = "سخت"
 	}
 
-	choiceType := "حقیقت"
-	if challenge.Type == models.TodTypeDare {
-		choiceType = "جرئت"
-	}
+	challengeMsg := fmt.Sprintf(`🎯 **چالش جدید:**
 
-	proofTypeText := getProofTypeText(challenge.ProofType)
+%s
 
-	// Active player view
-	activeMsg := fmt.Sprintf("🎯 چالش %s شما:\n\n━━━━━━━━━━━━━━\n%s\n\n━━━━━━━━━━━━━━\n📸 مدرک مورد نیاز: %s\n💰 پاداش: %d سکه + %d XP\n\n⏱ زمان: 60 ثانیه\n\n👇 مدرک خود را ارسال کنید:",
-		choiceType, challenge.Text, proofTypeText, challenge.CoinReward, challenge.XPReward)
-
-	bot.SendMessage(activeUser.TelegramID, activeMsg, nil)
-
-	// Passive player view
-	passiveMsg := fmt.Sprintf("🎮 راند %d/%d\n⏳ حریف در حال انجام چالش...\n\n━━━━━━━━━━━━━━\n🎯 چالش: %s\n\n⏱ زمان باقی‌مانده: 60 ثانیه\n\nمنتظر ارسال مدرک...",
-		game.CurrentRound, game.MaxRounds, choiceType)
-
-	passiveKeyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("💤 تلنگر", fmt.Sprintf("btn:tod_nudge_%d", gameID)),
-		),
+%s **درجه سختی:** %s
+💰 **پاداش:** %d سکه`,
+		challenge.Text,
+		difficultyEmoji, difficultyText,
+		challenge.CoinReward,
 	)
 
-	bot.SendMessage(passiveUser.TelegramID, passiveMsg, passiveKeyboard)
-}
-
-// Helper functions
-func getUserByID(userID uint, match models.Match) *models.User {
-	if match.User1ID == userID {
-		return &match.User1
-	} else if match.User2ID == userID {
-		return &match.User2
+	if challenge.ProofHint != "" {
+		challengeMsg += fmt.Sprintf("\n\n💡 **راهنمایی مدرک:** %s", challenge.ProofHint)
 	}
-	return nil
+
+	// Responder view
+	bot.SendMessage(activeUser.TelegramID, challengeMsg, bot.GetTodResponderInteractionKeyboard(gameID))
+
+	// Questioner view (Passive player)
+	bot.SendMessage(passiveUser.TelegramID, challengeMsg, bot.GetTodQuestionerInteractionKeyboard(gameID))
 }
 
 func getProofTypeText(proofType string) string {
@@ -415,68 +300,46 @@ func getProofTypeText(proofType string) string {
 	}
 }
 
-// StartTodGameWithMatch starts a ToD game with an existing match
+// ========================================
+// HELPERS
+// ========================================
+
+func getUserByID(userID uint, match models.Match) *models.User {
+	if match.User1ID == userID {
+		return &match.User1
+	}
+	return &match.User2
+}
+
 func (h *HandlerManager) StartTodGameWithMatch(userID int64, matchID uint, bot BotInterface) {
 	match, err := h.MatchRepo.GetMatchByID(matchID)
 	if err != nil {
-		bot.SendMessage(userID, "❌ خطا در دریافت اطلاعات مچ!", nil)
+		logger.Error("Failed to get match for ToD", "match_id", matchID, "error", err)
 		return
 	}
 
-	// Check if ToD game already exists
-	existingGame, _ := h.TodRepo.GetGameByMatchID(matchID)
-	if existingGame != nil {
-		// Check for terminal states - if match is active but game is done, close the match
-		if existingGame.State == models.TodStateForfeit || existingGame.State == models.TodStateGameEnd {
-			logger.Warn("Found active match with finished game", "match_id", matchID, "game_id", existingGame.ID, "state", existingGame.State)
-
-			// Close the inconsistency
-			h.MatchRepo.EndMatch(matchID)
-
-			// Update both users status
-			h.UserRepo.UpdateUserStatus(match.User1ID, models.UserStatusOnline)
-			h.UserRepo.UpdateUserStatus(match.User2ID, models.UserStatusOnline)
-
-			msg := "⚠️ بازی قبلی به پایان رسیده است.\n\nمی‌توانید دوباره جستجو کنید."
-			keyboard := tgbotapi.NewInlineKeyboardMarkup(
-				tgbotapi.NewInlineKeyboardRow(
-					tgbotapi.NewInlineKeyboardButtonData("🎲 جستجوی مجدد", "btn:tod_new_game"),
-				),
-			)
-			bot.SendMessage(userID, msg, keyboard)
-			return
-		}
-
-		// Resume existing game
-		h.ResumeTodGame(userID, existingGame.ID, bot)
-		return
-	}
-
-	// Create new ToD game
-	game, err := h.TodRepo.CreateGame(matchID, match.User1ID, match.User2ID)
+	game, err := h.TodRepo.CreateGame(match.ID, match.User1ID, match.User2ID)
 	if err != nil {
-		logger.Error("Failed to create ToD game", "error", err)
-		bot.SendMessage(userID, "❌ خطا در ایجاد بازی!", nil)
+		logger.Error("Failed to create ToD game", "match_id", matchID, "error", err)
 		return
 	}
 
-	// Show match found message
-	user1 := match.User1
-	user2 := match.User2
+	h.UserRepo.UpdateUserStatus(match.User1ID, models.UserStatusInMatch)
+	h.UserRepo.UpdateUserStatus(match.User2ID, models.UserStatusInMatch)
 
-	stats1, _ := h.TodRepo.GetOrCreatePlayerStats(user1.ID)
-	stats2, _ := h.TodRepo.GetOrCreatePlayerStats(user2.ID)
-
-	msg1 := fmt.Sprintf("✅ حریف پیدا شد!\n\n👤 حریف: %s\n⭐ سطح: %d\n🎖 امتیاز داوری: %.0f/100",
-		user2.FullName, user2.Level, stats2.JudgeScore)
-	msg2 := fmt.Sprintf("✅ حریف پیدا شد!\n\n👤 حریف: %s\n⭐ سطح: %d\n🎖 امتیاز داوری: %.0f/100",
-		user1.FullName, user1.Level, stats1.JudgeScore)
-
-	bot.SendMessage(user1.TelegramID, msg1, nil)
-	bot.SendMessage(user2.TelegramID, msg2, nil)
+	bot.SendMessage(match.User1.TelegramID, fmt.Sprintf("🎉 بازی با %s شروع شد!", match.User2.FullName), nil)
+	bot.SendMessage(match.User2.TelegramID, fmt.Sprintf("🎉 بازی با %s شروع شد!", match.User1.FullName), nil)
 
 	time.Sleep(2 * time.Second)
-
-	// Coin flip
 	h.HandleTodCoinFlip(game.ID, bot)
+}
+
+// StartTodFriends initiates the friends/group flow
+func (h *HandlerManager) StartTodFriends(telegramID int64, bot BotInterface) {
+	bot.SendMessage(telegramID, "👥 بخش بازی با دوستان به زودی فعال می‌شود.", nil)
+}
+
+// StartTodQuestionRegistration initiates the submission flow
+func (h *HandlerManager) StartTodQuestionRegistration(telegramID int64, bot BotInterface) {
+	bot.SendMessage(telegramID, "✍️ بخش ثبت سوال به زودی فعال می‌شود.", nil)
 }
