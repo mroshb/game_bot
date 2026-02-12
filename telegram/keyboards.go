@@ -11,19 +11,7 @@ import (
 func MainMenuKeyboard(isAdmin bool) tgbotapi.ReplyKeyboardMarkup {
 	var rows [][]tgbotapi.KeyboardButton
 
-	// Row 1 - Anonymous / Friends
-	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
-		tgbotapi.NewKeyboardButton(BtnTodAnonymous),
-		tgbotapi.NewKeyboardButton(BtnTodFriends),
-	))
-
-	// Row 2 - Register Question / Help
-	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
-		tgbotapi.NewKeyboardButton(BtnTodRegister),
-		tgbotapi.NewKeyboardButton(BtnTodHelp),
-	))
-
-	// Row 3 - My Village
+	// Row 1 - My Village
 	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
 		tgbotapi.NewKeyboardButton(BtnVillageHub),
 	))
@@ -78,6 +66,28 @@ func ActivityRestrictionKeyboard(status string) tgbotapi.ReplyKeyboardMarkup {
 	}
 
 	return tgbotapi.NewReplyKeyboard(rows...)
+}
+
+// GameKeyboard returns a keyboard with only "End Game"
+func GameKeyboard() tgbotapi.ReplyKeyboardMarkup {
+	return tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(BtnEndGame),
+		),
+	)
+}
+
+// ChatKeyboard returns a keyboard with ToD, Quiz, and End Chat
+func ChatKeyboard() tgbotapi.ReplyKeyboardMarkup {
+	return tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(BtnTruthDare),
+			tgbotapi.NewKeyboardButton(BtnQuiz),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(BtnEndChat),
+		),
+	)
 }
 
 // GenderKeyboard creates inline gender selection keyboard for registration
@@ -321,6 +331,11 @@ func TruthDareRoomKeyboard() tgbotapi.InlineKeyboardMarkup {
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(BtnRandomMatch, "btn:tod_anonymous_menu"),
+			tgbotapi.NewInlineKeyboardButtonData(BtnTodFriends, "btn:tod_friends"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(BtnTodRegister, "btn:tod_register"),
+			tgbotapi.NewInlineKeyboardButtonData(BtnTodHelp, "btn:tod_help"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(BtnBack, "btn:"+BtnBack),
@@ -368,11 +383,10 @@ func TodResponderInteractionKeyboard(gameID uint) tgbotapi.InlineKeyboardMarkup 
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(BtnTodSwap, fmt.Sprintf("btn:tod_use_item_%d_swap", gameID)),
-			tgbotapi.NewInlineKeyboardButtonData("💬 چت", fmt.Sprintf("btn:tod_chat_%d", gameID)),
+			tgbotapi.NewInlineKeyboardButtonData("🎒 آیتم‌ها", fmt.Sprintf("btn:tod_items_%d", gameID)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(BtnTodQuit, fmt.Sprintf("btn:tod_quit_%d", gameID)),
-			tgbotapi.NewInlineKeyboardButtonData("🎒 آیتم‌ها", fmt.Sprintf("btn:tod_items_%d", gameID)),
 		),
 	)
 }
@@ -381,8 +395,7 @@ func TodResponderInteractionKeyboard(gameID uint) tgbotapi.InlineKeyboardMarkup 
 func TodQuestionerInteractionKeyboard(gameID uint) tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("💬 چت", fmt.Sprintf("btn:tod_chat_%d", gameID)),
-			tgbotapi.NewInlineKeyboardButtonData("⚡️ تلنگر", fmt.Sprintf("btn:tod_nudge_%d", gameID)),
+			tgbotapi.NewInlineKeyboardButtonData(BtnTodQuit, fmt.Sprintf("btn:tod_quit_%d", gameID)),
 		),
 	)
 }

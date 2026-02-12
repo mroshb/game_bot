@@ -157,7 +157,7 @@ func (h *HandlerManager) ShowTodJudgmentScreen(gameID uint, turn *models.TodTurn
 	// Send proof to judge
 	judgeMsg := fmt.Sprintf("⚖️ داوری با توئه!\n\n━━━━━━━━━━━━━━\n🎯 چالش بود:\n%s\n\n📸 مدرک ارسالی:", turn.ChallengeText)
 
-	bot.SendMessage(passiveUser.TelegramID, judgeMsg, nil)
+	bot.SendMessage(passiveUser.TelegramID, judgeMsg, bot.GetGameKeyboard())
 
 	// Forward proof
 	h.forwardProof(passiveUser.TelegramID, turn, bot)
@@ -175,7 +175,7 @@ func (h *HandlerManager) ShowTodJudgmentScreen(gameID uint, turn *models.TodTurn
 
 	// Update active player
 	activeMsg := "🎮 مدرک شما ارسال شد!\n\nمنتظر تایید داور باشید... (هر وقت داور تایید کرد خبرت می‌کنیم)"
-	bot.SendMessage(activeUser.TelegramID, activeMsg, nil)
+	bot.SendMessage(activeUser.TelegramID, activeMsg, bot.GetGameKeyboard())
 }
 
 // forwardProof forwards the proof to judge
@@ -538,12 +538,11 @@ func (h *HandlerManager) MoveToNextRound(gameID uint, bot BotInterface) {
 
 	if game.CurrentRound > game.MaxRounds {
 		h.TodRepo.EndGame(gameID, 0, "completed")
-		h.UserRepo.UpdateUserStatus(game.Match.User1ID, models.UserStatusOnline)
-		h.UserRepo.UpdateUserStatus(game.Match.User2ID, models.UserStatusOnline)
+		// User status stays UserStatusInMatch for chat
 
-		msg := "🏁 **بازی به پایان رسید!**\n\nخسته نباشید، امیدوارم بهتون خوش گذشته باشه. باز هم می‌تونید بازی کنید! 🔥"
-		bot.SendMessage(game.Match.User1.TelegramID, msg, bot.GetMainMenuKeyboard(false))
-		bot.SendMessage(game.Match.User2.TelegramID, msg, bot.GetMainMenuKeyboard(false))
+		msg := "🏁 **بازی به پایان رسید!**\n\nخسته نباشید، امیدوارم بهتون خوش گذشته باشه. به محیط چت بازگشتید! 🔥"
+		bot.SendMessage(game.Match.User1.TelegramID, msg, bot.GetChatKeyboard())
+		bot.SendMessage(game.Match.User2.TelegramID, msg, bot.GetChatKeyboard())
 		return
 	}
 
@@ -559,7 +558,7 @@ func (h *HandlerManager) MoveToNextRound(gameID uint, bot BotInterface) {
 
 	// Passive player waits
 	passiveWaitMsg := roundMsg + fmt.Sprintf("\n⏳ منتظر انتخاب حریف (%s)...", activeUser.FullName)
-	bot.SendMessage(passiveUser.TelegramID, passiveWaitMsg, nil)
+	bot.SendMessage(passiveUser.TelegramID, passiveWaitMsg, bot.GetGameKeyboard())
 }
 
 // HandleTodNextRound manually triggers next round

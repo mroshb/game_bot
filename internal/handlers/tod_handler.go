@@ -133,9 +133,9 @@ func (h *HandlerManager) tryTodMatchmaking(userID uint, bot BotInterface) {
 
 	user, _ := h.UserRepo.GetUserByID(userID)
 	if user != nil {
-		bot.SendMessage(user.TelegramID, fmt.Sprintf("🎉 حریف پیدا شد!\n\n🔥 بازی با %s شروع شد!", opponent.FullName), nil)
+		bot.SendMessage(user.TelegramID, fmt.Sprintf("🎉 حریف پیدا شد!\n\n🔥 بازی با %s شروع شد!", opponent.FullName), bot.GetGameKeyboard())
 	}
-	bot.SendMessage(opponent.TelegramID, fmt.Sprintf("🎉 حریف پیدا شد!\n\n🔥 بازی با %s شروع شد!", user.FullName), nil)
+	bot.SendMessage(opponent.TelegramID, fmt.Sprintf("🎉 حریف پیدا شد!\n\n🔥 بازی با %s شروع شد!", user.FullName), bot.GetGameKeyboard())
 
 	time.Sleep(2 * time.Second)
 	h.HandleTodCoinFlip(game.ID, bot)
@@ -148,7 +148,8 @@ func (h *HandlerManager) CancelTodMatchmaking(telegramID int64, bot BotInterface
 	}
 	h.MatchRepo.RemoveFromQueue(user.ID)
 	h.UserRepo.UpdateUserStatus(user.ID, models.UserStatusOnline)
-	bot.SendMessage(telegramID, "❌ جستجو لغو شد.", nil)
+	isAdmin := user.TelegramID == h.Config.SuperAdminTgID
+	bot.SendMessage(telegramID, "❌ جستجو لغو شد.", bot.GetMainMenuKeyboard(isAdmin))
 }
 
 // ========================================
@@ -162,8 +163,8 @@ func (h *HandlerManager) HandleTodCoinFlip(gameID uint, bot BotInterface) {
 	}
 
 	msg := "🎲 در حال تعیین نقش‌ها (سوال‌کننده و پاسخ‌دهنده)..."
-	bot.SendMessage(game.Match.User1.TelegramID, msg, nil)
-	bot.SendMessage(game.Match.User2.TelegramID, msg, nil)
+	bot.SendMessage(game.Match.User1.TelegramID, msg, bot.GetGameKeyboard())
+	bot.SendMessage(game.Match.User2.TelegramID, msg, bot.GetGameKeyboard())
 
 	time.Sleep(2 * time.Second)
 
@@ -179,8 +180,8 @@ func (h *HandlerManager) HandleTodCoinFlip(gameID uint, bot BotInterface) {
 	responder := getUserByID(firstPlayer, game.Match)
 	questioner := getUserByID(secondPlayer, game.Match)
 
-	bot.SendMessage(responder.TelegramID, fmt.Sprintf("🎲 قرعه‌کشی انجام شد!\n\n👤 نقش شما: **پاسخ‌دهنده** (باید جرات یا حقیقت را انتخاب کنید)\n👤 رقیب: %s (سوال‌کننده)", questioner.FullName), nil)
-	bot.SendMessage(questioner.TelegramID, fmt.Sprintf("🎲 قرعه‌کشی انجام شد!\n\n👤 نقش شما: **سوال‌کننده** (منتظر انتخاب حریف بمانید)\n👤 رقیب: %s (پاسخ‌دهنده)", responder.FullName), nil)
+	bot.SendMessage(responder.TelegramID, fmt.Sprintf("🎲 قرعه‌کشی انجام شد!\n\n👤 نقش شما: **پاسخ‌دهنده** (باید جرات یا حقیقت را انتخاب کنید)\n👤 رقیب: %s (سوال‌کننده)", questioner.FullName), bot.GetGameKeyboard())
+	bot.SendMessage(questioner.TelegramID, fmt.Sprintf("🎲 قرعه‌کشی انجام شد!\n\n👤 نقش شما: **سوال‌کننده** (منتظر انتخاب حریف بمانید)\n👤 رقیب: %s (پاسخ‌دهنده)", responder.FullName), bot.GetGameKeyboard())
 
 	time.Sleep(2 * time.Second)
 
@@ -211,7 +212,7 @@ func (h *HandlerManager) ShowTodChoiceScreen(gameID uint, bot BotInterface) {
 
 	// Passive (Questioner) waits
 	passiveMsg := fmt.Sprintf("🎮 راند %d\n⏳ منتظر انتخاب حریف (%s)...", game.CurrentRound, activeUser.FullName)
-	bot.SendMessage(passiveUser.TelegramID, passiveMsg, nil)
+	bot.SendMessage(passiveUser.TelegramID, passiveMsg, bot.GetGameKeyboard())
 }
 
 func (h *HandlerManager) HandleTodChoice(telegramID int64, gameID uint, choice string, bot BotInterface) {
@@ -327,8 +328,8 @@ func (h *HandlerManager) StartTodGameWithMatch(userID int64, matchID uint, bot B
 	h.UserRepo.UpdateUserStatus(match.User1ID, models.UserStatusInMatch)
 	h.UserRepo.UpdateUserStatus(match.User2ID, models.UserStatusInMatch)
 
-	bot.SendMessage(match.User1.TelegramID, fmt.Sprintf("🎉 بازی با %s شروع شد!", match.User2.FullName), nil)
-	bot.SendMessage(match.User2.TelegramID, fmt.Sprintf("🎉 بازی با %s شروع شد!", match.User1.FullName), nil)
+	bot.SendMessage(match.User1.TelegramID, fmt.Sprintf("🎉 بازی با %s شروع شد!", match.User2.FullName), bot.GetGameKeyboard())
+	bot.SendMessage(match.User2.TelegramID, fmt.Sprintf("🎉 بازی با %s شروع شد!", match.User1.FullName), bot.GetGameKeyboard())
 
 	time.Sleep(2 * time.Second)
 	h.HandleTodCoinFlip(game.ID, bot)

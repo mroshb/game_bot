@@ -653,10 +653,11 @@ func (h *HandlerManager) HandleTodQuit(userID int64, gameID uint, bot BotInterfa
 	// End game
 	h.TodRepo.EndGame(gameID, winnerID, "quit")
 
-	// Close match session
+	/* (Disabled - One step back to Chat)
 	if game.MatchID > 0 {
 		h.MatchRepo.EndMatch(game.MatchID)
 	}
+	*/
 
 	// Update stats
 	h.TodRepo.IncrementGamesPlayed(winnerID, true)
@@ -669,11 +670,11 @@ func (h *HandlerManager) HandleTodQuit(userID int64, gameID uint, bot BotInterfa
 	h.CoinRepo.AddCoins(winnerID, 20, models.TxTypeGameReward, "پاداش برد به دلیل انصراف حریف")
 
 	// Send messages
-	bot.SendMessage(userID, "🏳️ شما از بازی انصراف دادید\n\n💸 جریمه: -10 سکه", nil)
+	bot.SendMessage(userID, "🏳️ شما از بازی انصراف دادید و به محیط چت بازگشتید.\n\n💸 جریمه: -10 سکه", bot.GetChatKeyboard())
 
 	winnerUser := getUserByID(winnerID, game.Match)
 	if winnerUser != nil {
-		bot.SendMessage(winnerUser.TelegramID, "🏆 حریف از بازی انصراف داد!\n\n💰 پاداش: +20 سکه", nil)
+		bot.SendMessage(winnerUser.TelegramID, "🏆 حریف از بازی انصراف داد و به محیط چت بازگشتید!\n\n💰 پاداش: +20 سکه", bot.GetChatKeyboard())
 	}
 }
 
@@ -716,7 +717,7 @@ func (h *HandlerManager) ResumeTodGame(userID int64, gameID uint, bot BotInterfa
 	}
 
 	msg := fmt.Sprintf("بازی شما در حال ادامه است...\n\nراند %d از %d", game.CurrentRound, game.MaxRounds)
-	bot.SendMessage(userID, msg, nil)
+	bot.SendMessage(userID, msg, bot.GetGameKeyboard())
 
 	time.Sleep(1 * time.Second)
 

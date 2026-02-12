@@ -24,6 +24,8 @@ type BotInterface interface {
 	SendPhoto(chatID int64, photoID string, caption string, keyboard interface{}) int
 	SendMainMenu(chatID int64, isAdmin bool)
 	GetMainMenuKeyboard(isAdmin bool) interface{}
+	GetChatKeyboard() interface{}
+	GetGameKeyboard() interface{}
 	GetGenderKeyboard() interface{}
 	GetAgeSelectionKeyboard() interface{}
 	GetProvinceKeyboard() interface{}

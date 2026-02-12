@@ -40,33 +40,27 @@ func (h *HandlerManager) HandleChatMessage(message *tgbotapi.Message, user *mode
 		return
 	}
 
-	// Check status for cost calculation
-	// Free if active, Costly if timeout
-	msgCost := int64(0)
-	if match.Status == models.MatchStatusTimeout {
-		// "After match" - cost is 2 coins
-		// We could use Config but request specified "2 coins" or maybe MessageCost config (default 1).
-		// Let's use config.MessageCost if > 0, else 2 as default for "after match" if not specified?
-		// Or assume h.Config.MessageCost is for this scenario.
-		// Given user said "2 coins after match", let's assume global message cost is 2, or hardcode/logic it.
-		// h.Config.MessageCost defaults to 1.
-		// Let's set it to 2 here as per request unless configured higher.
-		msgCost = 2
-	}
-
-	if msgCost > 0 {
-		hasFunds, _ := h.CoinRepo.HasSufficientBalance(user.ID, msgCost)
-		if !hasFunds {
-			bot.SendMessage(message.From.ID, fmt.Sprintf("❌ سکه کافی نداری! هزینه هر پیام بعد از پایان زمان: %d سکه", msgCost), nil)
-			return
+	// Check status for cost calculation (Disabled - Unlimited Chat)
+	// msgCost := int64(0) (Disabled - Unlimited Chat)
+	/*
+		if match.Status == models.MatchStatusTimeout {
+			msgCost = 2
 		}
 
-		if err := h.CoinRepo.DeductCoins(user.ID, msgCost, models.TxTypeMessage, "هزینه ارسال پیام (بعد از پایان match)"); err != nil {
-			logger.Error("Failed to deduct coins for message", "error", err)
-			bot.SendMessage(message.From.ID, "❌ خطا در کسر سکه!", nil)
-			return
+		if msgCost > 0 {
+			hasFunds, _ := h.CoinRepo.HasSufficientBalance(user.ID, msgCost)
+			if !hasFunds {
+				bot.SendMessage(message.From.ID, fmt.Sprintf("❌ سکه کافی نداری! هزینه هر پیام بعد از پایان زمان: %d سکه", msgCost), nil)
+				return
+			}
+
+			if err := h.CoinRepo.DeductCoins(user.ID, msgCost, models.TxTypeMessage, "هزینه ارسال پیام (بعد از پایان match)"); err != nil {
+				logger.Error("Failed to deduct coins for message", "error", err)
+				bot.SendMessage(message.From.ID, "❌ خطا در کسر سکه!", nil)
+				return
+			}
 		}
-	}
+	*/
 
 	// Forward message to other user
 	if err := h.forwardMessage(message, otherUser.TelegramID, bot, ""); err != nil {

@@ -180,7 +180,7 @@ func (b *Bot) startBackgroundJobs() {
 
 	// Use a silent database session for background jobs to reduce log noise
 	silentDB := b.db.Session(&gorm.Session{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
-	matchRepo := b.handlers.MatchRepo.WithTx(silentDB)
+	// matchRepo := b.handlers.MatchRepo.WithTx(silentDB) (Disabled for unlimited chat)
 	userRepo := b.handlers.UserRepo.WithTx(silentDB)
 
 	for {
@@ -188,17 +188,19 @@ func (b *Bot) startBackgroundJobs() {
 		case <-b.ctx.Done():
 			return
 		case <-ticker.C:
-			// Handle timeouts
-			timedOutSessions, err := matchRepo.CheckAndHandleTimeouts()
-			if err != nil {
-				logger.Error("Failed to check timeouts", "error", err)
-			} else {
-				// Notify users about timeout
-				for _, session := range timedOutSessions {
-					b.handlers.HandleMatchTimeout(session.User1ID, b)
-					b.handlers.HandleMatchTimeout(session.User2ID, b)
+			// Handle timeouts (Disabled for unlimited chat)
+			/*
+				timedOutSessions, err := matchRepo.CheckAndHandleTimeouts()
+				if err != nil {
+					logger.Error("Failed to check timeouts", "error", err)
+				} else {
+					// Notify users about timeout
+					for _, session := range timedOutSessions {
+						b.handlers.HandleMatchTimeout(session.User1ID, b)
+						b.handlers.HandleMatchTimeout(session.User2ID, b)
+					}
 				}
-			}
+			*/
 
 			// Check Quiz Match Timeouts (3 days)
 			b.handlers.CheckQuizTimeouts(b)
@@ -421,9 +423,14 @@ func (b *Bot) handleMessage(message *tgbotapi.Message) {
 			// Update session state
 			session.State = StateInChat
 
-			// Handle End Chat explicitly here
-			if normalizeButton(message.Text) == normalizeButton(BtnEndChat) {
-				b.handlers.EndChat(userID, b)
+			// Handle End Chat / End Game explicitly here
+			btnText := normalizeButton(message.Text)
+			if btnText == normalizeButton(BtnEndChat) || btnText == normalizeButton(BtnEndGame) || btnText == normalizeButton(BtnTodQuit) {
+				if btnText == normalizeButton(BtnEndChat) {
+					b.handlers.EndChat(userID, b)
+				} else {
+					b.handlers.HandleTodQuitSimple(userID, b)
+				}
 				session.State = StateNone
 				return
 			}
@@ -530,12 +537,9 @@ func (b *Bot) handleCommand(message *tgbotapi.Message, isRegistered bool) {
 			activeMatch, _ := b.handlers.MatchRepo.GetActiveMatch(user.ID)
 
 			if activeMatch != nil {
-				// Resend chat interface
-				b.sendMessage(userID, "⚠️ شما در چت فعال هستید! برای خروج پایان چت را بزنید.", handlers.ChatKeyboard())
-
-				// Ensure session is set to InChat
-				session := b.getSession(userID)
-				session.State = StateInChat
+				// Resend appropriate interface
+				msg := "⚠️ شما در یک فعالیت فعال هستید! برای خروج از دکمه‌های پایان/انصراف استفاده کنید."
+				b.sendMessage(userID, msg, b.getActivityKeyboard(user))
 				return
 			}
 
@@ -604,12 +608,12 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 
 	// Activity guard: if user is in an active state, they can only use their "End" button
 	// This prevents them from opening the main menu or other features while searching or in a match
-	isEndAction := btn == normalizeButton(BtnEndChat) || btn == normalizeButton(BtnCancel) || btn == normalizeButton(BtnTodQuit)
+	isEndAction := btn == normalizeButton(BtnEndChat) || btn == normalizeButton(BtnEndGame) || btn == normalizeButton(BtnCancel) || btn == normalizeButton(BtnTodQuit)
 	isChatGameTrigger := (btn == normalizeButton(BtnTruthDare) || btn == normalizeButton(BtnQuiz)) && user.Status == models.UserStatusInMatch
 
 	if isRegistered && user != nil && !isEndAction && !isChatGameTrigger {
 		if user.Status == models.UserStatusSearching || user.Status == models.UserStatusInMatch {
-			b.sendMessage(userID, "⚠️ شما در حال حاضر مشغول یک فعالیت (چت یا بازی) هستید. برای دسترسی به منوی اصلی باید فعالیت فعلی را تمام کنید یا گزینه خروج/انصراف را بزنید.", ActivityRestrictionKeyboard(user.Status))
+			b.sendMessage(userID, "⚠️ شما در حال حاضر مشغول یک فعالیت (چت یا بازی) هستید. برای دسترسی به منوی اصلی باید فعالیت فعلی را تمام کنید یا گزینه خروج/انصراف را بزنید.", b.getActivityKeyboard(user))
 			return true
 		}
 	}
@@ -885,7 +889,7 @@ func (b *Bot) handleButtonPress(message *tgbotapi.Message, user *models.User, is
 		clearState()
 		b.handlers.EndChat(userID, b)
 
-	case normalizeButton(BtnTodQuit):
+	case normalizeButton(BtnTodQuit), normalizeButton(BtnEndGame):
 		clearState()
 		b.handlers.HandleTodQuitSimple(userID, b)
 
@@ -1423,7 +1427,7 @@ func (b *Bot) startSearchFlow(userID int64) {
 
 	activeMatch, _ := b.handlers.MatchRepo.GetActiveMatch(user.ID)
 	if activeMatch != nil {
-		b.sendMessage(userID, MsgAlreadyInMatch, handlers.ChatKeyboard())
+		b.sendMessage(userID, MsgAlreadyInMatch, ChatKeyboard())
 		return
 	}
 
@@ -1527,14 +1531,39 @@ func (b *Bot) EditMessage(chatID int64, messageID int, text string, keyboard int
 func (b *Bot) SendMainMenu(chatID int64, isAdmin bool) {
 	user, _ := b.handlers.UserRepo.GetUserByTelegramID(chatID)
 	if user != nil && (user.Status == models.UserStatusSearching || user.Status == models.UserStatusInMatch) {
-		b.sendMessage(chatID, "⚠️ شما در حال حاضر مشغول هستید. برای دسترسی به منوی اصلی باید فعالیت فعلی را تمام کنید یا گزینه انصراف/پایان را بزنید.", ActivityRestrictionKeyboard(user.Status))
+		b.sendMessage(chatID, "⚠️ شما در حال حاضر مشغول هستید. برای دسترسی به منوی اصلی باید فعالیت فعلی را تمام کنید یا گزینه انصراف/پایان را بزنید.", b.getActivityKeyboard(user))
 		return
 	}
 	b.sendMessage(chatID, MsgMainMenu, MainMenuKeyboard(isAdmin))
 }
 
+func (b *Bot) getActivityKeyboard(user *models.User) interface{} {
+	if user.Status == models.UserStatusSearching {
+		return ActivityRestrictionKeyboard("searching")
+	}
+	if user.Status == models.UserStatusInMatch {
+		// Check for active ToD game
+		todGame, _ := b.handlers.TodRepo.GetActiveGameForUser(user.ID)
+		if todGame != nil {
+			return GameKeyboard()
+		}
+		// Check for active Quiz game (optional, but good for consistency)
+		// For now, let's stick to ChatKeyboard if no ToD game is found
+		return ChatKeyboard()
+	}
+	return nil
+}
+
+func (b *Bot) GetChatKeyboard() interface{} {
+	return ChatKeyboard()
+}
+
 func (b *Bot) GetMainMenuKeyboard(isAdmin bool) interface{} {
 	return MainMenuKeyboard(isAdmin)
+}
+
+func (b *Bot) GetGameKeyboard() interface{} {
+	return GameKeyboard()
 }
 
 func (b *Bot) GetGenderKeyboard() interface{} {

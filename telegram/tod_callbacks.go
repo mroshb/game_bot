@@ -137,6 +137,7 @@ func (b *Bot) HandleTodCallbacks(query *tgbotapi.CallbackQuery, data string) boo
 			b.api.Send(tgbotapi.NewCallback(query.ID, ""))
 			return true
 
+		/* (Disabled - Chat and Nudge removed)
 		case strings.HasPrefix(data, "btn:tod_nudge_"):
 			gameIDStr := strings.TrimPrefix(data, "btn:tod_nudge_")
 			gameID, err := strconv.ParseUint(gameIDStr, 10, 32)
@@ -147,6 +148,7 @@ func (b *Bot) HandleTodCallbacks(query *tgbotapi.CallbackQuery, data string) boo
 			b.handlers.HandleTodNudge(userID, uint(gameID), b)
 			b.api.Send(tgbotapi.NewCallback(query.ID, "تلنگر ارسال شد!"))
 			return true
+		*/
 
 		case strings.HasPrefix(data, "btn:tod_force_win_"):
 			gameIDStr := strings.TrimPrefix(data, "btn:tod_force_win_")
@@ -170,12 +172,14 @@ func (b *Bot) HandleTodCallbacks(query *tgbotapi.CallbackQuery, data string) boo
 			b.api.Send(tgbotapi.NewCallback(query.ID, ""))
 			return true
 
+		/* (Disabled - Chat and Nudge removed)
 		case strings.HasPrefix(data, "btn:tod_chat_"):
 			gameIDStr := strings.TrimPrefix(data, "btn:tod_chat_")
 			gameID, _ := strconv.ParseUint(gameIDStr, 10, 32)
 			b.handlers.HandleTodChat(userID, uint(gameID), b)
 			b.api.Send(tgbotapi.NewCallback(query.ID, ""))
 			return true
+		*/
 
 		case strings.HasPrefix(data, "btn:tod_adm_app_"):
 			// Format: btn:tod_adm_app_{gameID}_{turnID}_{result}
@@ -201,6 +205,21 @@ func (b *Bot) HandleTodCallbacks(query *tgbotapi.CallbackQuery, data string) boo
 			b.handlers.HandleTodNextRound(userID, uint(gameID), b)
 			b.api.Send(tgbotapi.NewCallback(query.ID, ""))
 			return true
+
+		case data == "btn:tod_friends":
+			b.api.Send(tgbotapi.NewCallback(query.ID, ""))
+			b.handlers.StartTodFriends(userID, b)
+			return true
+
+		case data == "btn:tod_register":
+			b.api.Send(tgbotapi.NewCallback(query.ID, ""))
+			b.handlers.StartTodQuestionRegistration(userID, b)
+			return true
+
+		case data == "btn:tod_help":
+			b.api.Send(tgbotapi.NewCallback(query.ID, ""))
+			b.sendMessage(userID, MsgHelp, nil)
+			return true
 		}
 	}
 
@@ -224,6 +243,15 @@ func (b *Bot) HandleTodMessages(message *tgbotapi.Message) bool {
 
 	// Check if game is in proof submission state
 	if activeGame.State == models.TodStateWaitingProof && activeGame.ActivePlayerID == user.ID {
+		// Ignore common commands and buttons so they can be handled by the main message handler
+		if message.IsCommand() {
+			return false
+		}
+		text := normalizeButton(message.Text)
+		if text == normalizeButton(BtnEndChat) || text == normalizeButton(BtnTodQuit) || text == normalizeButton(BtnEndGame) {
+			return false
+		}
+
 		b.handlers.HandleTodProofSubmission(userID, activeGame.ID, message, b)
 		return true
 	}

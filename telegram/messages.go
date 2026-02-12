@@ -25,7 +25,7 @@ const (
 	MsgSearchGenderFilter = "جنسیت مورد نظر:"
 	MsgSearchAgeFilter    = "محدوده سنی رو وارد کن (مثال: 20-30) یا بزن رد شو:"
 	MsgSearchCityFilter   = "شهر مورد نظر رو بنویس یا بزن رد شو:"
-	MsgMatchFound         = "✅ پیدا شد!\n\nیک نفر پیدا کردیم! می‌تونی شروع به چت کنی.\n\n⏰ مدت زمان: %d دقیقه"
+	MsgMatchFound         = "✅ پیدا شد!\n\nیک نفر پیدا کردیم! می‌تونی شروع به چت کنی."
 	MsgMatchTimeout       = "⏰ زمان تموم شد!\n\n💰 بازگشت: %d سکه (نصف هزینه)\n\nمتأسفانه کسی پیدا نشد."
 	MsgSearchCancelled    = "❌ جستجو لغو شد.\n\n💰 بازگشت: %d سکه"
 	MsgMatchEnded         = "👋 چت تموم شد!\n\nامیدواریم لذت برده باشی."
@@ -147,6 +147,7 @@ const (
 
 	BtnCancel         = "❌ لغو"
 	BtnEndChat        = "🔚 پایان چت"
+	BtnEndGame        = "🔚 پایان بازی"
 	BtnSkip           = "⏭️ رد شو"
 	BtnMale           = "👨 پسر"
 	BtnFemale         = "👩 دختر"

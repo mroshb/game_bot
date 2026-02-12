@@ -134,6 +134,7 @@ const (
 	BtnTodDone      = "✅ پاسخ داد / انجام شد"
 	BtnTodSwap      = "🔄 تغییر سوال (۵ سکه)"
 	BtnTodQuit      = "🚩 انصراف"
+	BtnEndGame      = "🔚 پایان بازی"
 
 	MsgErrorGeneric      = "❌ متاسفانه خطایی رخ داده است. لطفاً دوباره تلاش کنید."
 	MsgInsufficientCoins = "⚠️ سکه کافی نداری! موجودی فعلی: %d"

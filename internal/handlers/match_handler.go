@@ -42,7 +42,7 @@ func (h *HandlerManager) StartMatchmaking(userID int64, requestedGender string, 
 	}
 
 	if activeMatch != nil {
-		bot.SendMessage(userID, "⚠️ شما الان در یک چت فعال هستید!", ChatKeyboard())
+		bot.SendMessage(userID, "⚠️ شما الان در یک چت فعال هستید!", bot.GetChatKeyboard())
 		return
 	}
 
@@ -328,25 +328,11 @@ func (h *HandlerManager) createMatchSession(user1ID, user2ID uint, tg1ID, tg2ID 
 	}
 
 	// Notify both users
-	msg := fmt.Sprintf("✅ پیدا شد!\n\nیک نفر پیدا کردیم! می‌تونی شروع به چت کنی.\n\n⏰ مدت زمان: %d دقیقه", h.Config.MatchTimeoutMinutes)
-	keyboard := ChatKeyboard()
-
-	bot.SendMessage(tg1ID, msg, keyboard)
-	bot.SendMessage(tg2ID, msg, keyboard)
+	msg := "✅ پیدا شد!\n\nیک نفر پیدا کردیم! می‌تونی شروع به چت کنی."
+	bot.SendMessage(tg1ID, msg, bot.GetChatKeyboard())
+	bot.SendMessage(tg2ID, msg, bot.GetChatKeyboard())
 
 	logger.Info("Match created", "session_id", session.ID, "user1", user1ID, "user2", user2ID)
-}
-
-func ChatKeyboard() tgbotapi.ReplyKeyboardMarkup {
-	return tgbotapi.NewReplyKeyboard(
-		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton(BtnTruthDare),
-			tgbotapi.NewKeyboardButton(BtnQuiz),
-		),
-		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton(BtnEndChat),
-		),
-	)
 }
 
 func (h *HandlerManager) handleQueueTimeout(userID uint, telegramID int64, bot BotInterface) {
@@ -379,16 +365,6 @@ func (h *HandlerManager) handleQueueTimeout(userID uint, telegramID int64, bot B
 	bot.SendMessage(telegramID, msg, bot.GetMainMenuKeyboard(isAdmin))
 
 	logger.Info("Match timeout", "user_id", userID, "refund", refundAmount)
-}
-
-// HandleMatchTimeout handles notification for match session timeout (Active -> Timeout)
-func (h *HandlerManager) HandleMatchTimeout(userID uint, bot BotInterface) {
-	user, err := h.UserRepo.GetUserByID(userID)
-	if err != nil {
-		return
-	}
-
-	bot.SendMessage(user.TelegramID, "⏰ زمان چت رایگان تمام شد!\n\n💬 می‌توانید به چت ادامه دهید (هزینه: 2 سکه هر پیام).", nil)
 }
 
 func (h *HandlerManager) refundMatchCost(userID uint, telegramID int64, bot BotInterface) {

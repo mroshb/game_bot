@@ -103,6 +103,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.QuizAnswer{},
 		&models.UserBooster{},
 		&models.VillageWar{},
+		&models.UserLike{},
 	)
 
 	if err != nil {
